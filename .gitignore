@@ -1,0 +1,21 @@
+# Virtual environments
+.venv/
+.venv-1/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Editor
+.vscode/
+
+# Excel data (inputs / scraped outputs)
+*.xlsx
+!docs/sample_input.xlsx
+
+# OS
+Thumbs.db
+.DS_Store

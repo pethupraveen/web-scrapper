@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Scrapper — Amazon &amp; Flipkart product data tools</title>
+<meta name="description" content="Playwright-based Amazon ASIN scraper and a Flipkart compatible-models console snippet.">
+<style>
+  :root{
+    --bg:#fbfaf8; --panel:#ffffff; --ink:#1a1815; --muted:#6b6560;
+    --line:#e6e1da; --accent:#b4532a; --code-bg:#f4f1ec;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#141311; --panel:#1c1a18; --ink:#eceae6; --muted:#a09a92;
+           --line:#2e2b27; --accent:#e08a5c; --code-bg:#232120; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:820px;margin:0 auto;padding:0 24px}
+  header{padding:72px 0 40px;border-bottom:1px solid var(--line)}
+  h1{margin:0 0 12px;font-size:2.5rem;line-height:1.15;letter-spacing:-.02em}
+  .tag{color:var(--muted);font-size:1.06rem;margin:0 0 24px;max-width:56ch}
+  .btn{display:inline-block;padding:9px 18px;border:1px solid var(--line);
+    border-radius:7px;background:var(--panel);color:var(--ink);
+    text-decoration:none;font-size:.92rem;font-weight:500;margin-right:8px}
+  .btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.primary:hover{opacity:.9;color:#fff}
+  section{padding:44px 0;border-bottom:1px solid var(--line)}
+  section:last-of-type{border-bottom:0}
+  h2{font-size:1.28rem;margin:0 0 18px;letter-spacing:-.01em}
+  h3{font-size:1rem;margin:26px 0 8px}
+  p{margin:0 0 14px;color:var(--ink)}
+  .muted{color:var(--muted)}
+  .cards{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px}
+  .card h3{margin:0 0 8px;font-size:1.02rem}
+  .card p{margin:0;font-size:.92rem;color:var(--muted);line-height:1.6}
+  code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.87em;
+    background:var(--code-bg);padding:2px 6px;border-radius:4px}
+  pre{background:var(--code-bg);border:1px solid var(--line);border-radius:9px;
+    padding:16px;overflow-x:auto;margin:0 0 16px}
+  pre code{background:none;padding:0;font-size:.85rem;line-height:1.7}
+  .fields{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 0;padding:0;list-style:none}
+  .fields li{font-family:ui-monospace,Consolas,monospace;font-size:.82rem;
+    border:1px solid var(--line);border-radius:20px;padding:3px 12px;color:var(--muted)}
+  ol{padding-left:22px;margin:0 0 14px}
+  ol li{margin-bottom:7px}
+  footer{padding:36px 0 64px;color:var(--muted);font-size:.87rem}
+  footer a{color:var(--accent)}
+  .note{border-left:3px solid var(--accent);padding:2px 0 2px 16px;color:var(--muted);
+    font-size:.92rem;margin:20px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Web Scrapper</h1>
+  <p class="tag">A small toolkit for pulling product data off Indian e-commerce sites —
+     a Playwright scraper for Amazon ASINs, and a zero-install console snippet for
+     Flipkart's compatible-models list.</p>
+  <a class="btn primary" href="https://github.com/pethupraveen/web-scrapper">View on GitHub</a>
+  <a class="btn" href="#quickstart">Quick start</a>
+</header>
+
+<section>
+  <h2>What's in the box</h2>
+  <div class="cards">
+    <div class="card">
+      <h3>Amazon ASIN scraper</h3>
+      <p>Feed it a spreadsheet of ASINs. It opens each <code>amazon.in/dp/&lt;ASIN&gt;</code>
+         page in a real Chromium window, parses the DOM with BeautifulSoup, and writes
+         one row per product to Excel.</p>
+    </div>
+    <div class="card">
+      <h3>Flipkart console snippet</h3>
+      <p>Paste into DevTools on an open "Compatible Mobiles" filter. It scrolls the
+         overlay, collects every model name, and downloads a CSV. No class names, so
+         Flipkart's CSS-hash rotation doesn't break it.</p>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart">
+  <h2>Quick start</h2>
+<pre><code>git clone https://github.com/pethupraveen/web-scrapper.git
+cd web-scrapper
+
+python -m venv .venv
+.venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
+
+pip install -r requirements.txt
+playwright install chromium</code></pre>
+
+  <h3>Run the Amazon scraper</h3>
+  <p>Drop an <code>input_asins.xlsx</code> beside the script with an <code>ASIN</code>
+     column, then:</p>
+<pre><code>python Amazon_Updated_Script.py</code></pre>
+  <p class="muted">Output goes to <code>scraped_amazon_results.xlsx</code>, one row per ASIN:</p>
+  <ul class="fields">
+    <li>ASIN</li><li>Status</li><li>Title</li><li>Price</li>
+    <li>Rating</li><li>ReviewCount</li><li>Bullets</li>
+  </ul>
+
+  <h3>Run the Flipkart snippet</h3>
+  <ol>
+    <li>Open a Flipkart listing and open the <strong>Compatible Mobiles</strong> filter overlay.</li>
+    <li>Open DevTools (<code>F12</code>) → Console.</li>
+    <li>Paste <code>console_snippet.js</code>, press Enter, and let it finish scrolling.</li>
+    <li><code>compatible_mobiles.csv</code> downloads automatically.</li>
+  </ol>
+</section>
+
+<section>
+  <h2>Design notes</h2>
+  <p><strong>Headful on purpose.</strong> Chromium launches with
+     <code>headless=False</code> and an <code>en-IN</code> locale — it gets challenged
+     far less often than a headless session.</p>
+  <p><strong>Paced, not hammered.</strong> Two waits per product (2–4s after load,
+     2–5s between ASINs) keep the request rate close to human browsing.</p>
+  <p><strong>Fails soft.</strong> A blocked or missing page returns
+     <code>Status = "Blocked/Not Found"</code> and an exception returns
+     <code>Status = "Error: …"</code>. Either way the run continues and the row is kept,
+     so a single bad ASIN never costs you the batch.</p>
+  <p><strong>Price selectors are a chain.</strong> Amazon serves several price layouts;
+     the scraper tries <code>.priceToPay</code>, then <code>.a-price</code>, then the two
+     legacy <code>#priceblock_*</code> ids, and takes the first hit.</p>
+  <p class="note">Excel inputs and outputs are gitignored — the repo holds the code,
+     not the data. Scrape responsibly and within each site's terms of use.</p>
+</section>
+
+<footer>
+  <a href="https://github.com/pethupraveen/web-scrapper">github.com/pethupraveen/web-scrapper</a>
+</footer>
+
+</div>
+</body>
+</html>
