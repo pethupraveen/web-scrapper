@@ -23,6 +23,16 @@ AMAZON_COLUMNS = [
     "ASIN", "Status", "Title", "Price", "Rating", "ReviewCount", "Bullets", "URL",
 ]
 FLIPKART_COLUMNS = ["model"]
+FLIPKART_PID_COLUMNS = [
+    "PID", "Status", "Name", "Rating", "RatingCount", "ReviewCount",
+    "Price", "MRP", "Stock", "URL",
+]
+
+COLUMNS_BY_KIND = {
+    "amazon": AMAZON_COLUMNS,
+    "flipkart": FLIPKART_COLUMNS,
+    "flipkart_pid": FLIPKART_PID_COLUMNS,
+}
 
 PRICE_SELECTORS = [
     ".priceToPay .a-offscreen",
@@ -172,6 +182,10 @@ FLIPKART_COLLECT_JS = Path(__file__).with_name("flipkart_collect.js").read_text(
     encoding="utf-8"
 )
 
+FLIPKART_PRICE_JS = Path(__file__).with_name("flipkart_price.js").read_text(
+    encoding="utf-8"
+)
+
 
 async def run_flipkart(url, on_progress, headless=False, should_stop=None):
     """Open a Flipkart listing, expand the Compatible Mobiles filter, harvest it."""
@@ -225,3 +239,187 @@ async def run_flipkart(url, on_progress, headless=False, should_stop=None):
         finally:
             await context.close()
             await browser.close()
+
+
+# ── Flipkart product pages, by PID / FSN ────────────────────────────────
+#
+# The URL matters: /product/p/itm (no trailing "e") serves a generic "Itm
+# Store" listing that ignores the pid entirely and renders the same product
+# for every id. /product/p/itme resolves the pid properly.
+FLIPKART_PID_URL = "https://www.flipkart.com/product/p/itme?pid={pid}"
+
+PID_RE = re.compile(r"\b([A-Z0-9]{16})\b")
+
+# Resolved once the buy box has settled into a buyable or unbuyable state.
+# Without this the price and stock fields get read mid-hydration.
+BUY_BOX_READY_JS = """() => {
+  const t = document.body ? document.body.innerText : '';
+  return /Add to cart|Buy now|Notify Me|Currently unavailable|Sold Out/i.test(t);
+}"""
+
+# Everything above these headings belongs to the product; below them are the
+# recommendation carousels, whose prices are for *other* products.
+#
+# Keep these headings specific. A loose word like "Recommended" also matches
+# review text ("Not recommended at all") and truncates the page before the
+# buy box ever appears.
+CAROUSEL_RE = re.compile(
+    r"^\s*(?:Similar Products|Products Related to this Item|"
+    r"You might be interested in)\s*$",
+    re.I | re.M,
+)
+
+
+def clean_pid(value):
+    """Normalise a cell into a Flipkart PID, pulling it out of a URL if needed."""
+    pid = str(value).strip().upper()
+
+    if not pid or pid == "NAN":
+        return None
+
+    match = re.search(r"[?&]PID=([A-Z0-9]{16})", pid)
+    if match:
+        return match.group(1)
+
+    match = PID_RE.search(pid)
+
+    return match.group(1) if match else None
+
+
+def parse_pid_text(text):
+    seen, pids = set(), []
+
+    for token in re.split(r"[\s,;]+", text or ""):
+        pid = clean_pid(token)
+
+        if pid and pid not in seen:
+            seen.add(pid)
+            pids.append(pid)
+
+    return pids
+
+
+def blank_pid_row(pid, status):
+    row = {column: None for column in FLIPKART_PID_COLUMNS}
+    row["PID"] = pid
+    row["Status"] = status
+    row["URL"] = FLIPKART_PID_URL.format(pid=pid)
+    return row
+
+
+def parse_flipkart_page(pid, title, body, prices=None):
+    """Pull the product fields out of the rendered page text.
+
+    Deliberately reads text rather than class names — Flipkart rotates CSS
+    hashes, which is what broke the original scraper_updated.py.
+    """
+    name = re.sub(r"\s*[:|]\s*Flipkart\.com\s*$", "", title).strip()
+    name = re.sub(r"\s*-\s*Buy\s.*$", "", name).strip()
+    name = re.sub(r"\s*-\s*Sprig\s*$", "", name).strip() or None
+
+    # A pid that doesn't resolve lands on the generic store page.
+    if name and re.match(r"^Itm Store\b", name, re.I):
+        return blank_pid_row(pid, "Not Found")
+
+    head = CAROUSEL_RE.split(body)[0]
+
+    rating_count = review_count = rating = None
+
+    match = re.search(r"based on\s*([\d,]+)\s*ratings?", head, re.I)
+    if match:
+        rating_count = match.group(1)
+
+    match = re.search(r"([\d,]+)\s*Reviews?\b", head, re.I)
+    if match:
+        review_count = match.group(1)
+
+    match = re.search(r"(?m)^\s*([0-5](?:\.\d)?)\s*$", head)
+    if match:
+        rating = match.group(1)
+
+    prices = prices or {}
+    price = prices.get("price")
+    mrp = prices.get("mrp")
+
+    # Stock reads the whole page, not just the head: the buy buttons can render
+    # below the fold in a sticky bar, and no carousel ever says "Add to cart",
+    # so there is nothing here to confuse them with.
+    #
+    # Positive evidence only — defaulting to "In stock" mislabels pages whose
+    # buy box never rendered a button at all.
+    if re.search(r"\bAdd to cart\b|\bBuy now\b", body, re.I):
+        stock = "In stock"
+    elif re.search(r"\bNotify Me\b|Currently unavailable|Sold Out", body, re.I):
+        stock = "Out of stock"
+    else:
+        stock = "Unknown"
+
+    return {
+        "PID": pid,
+        "Status": "Success" if name else "Blocked/Not Found",
+        "Name": name,
+        "Rating": rating,
+        "RatingCount": rating_count,
+        "ReviewCount": review_count,
+        "Price": price,
+        "MRP": mrp,
+        "Stock": stock,
+        "URL": FLIPKART_PID_URL.format(pid=pid),
+    }
+
+
+async def scrape_flipkart_pid(page, pid):
+    url = FLIPKART_PID_URL.format(pid=pid)
+
+    try:
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+
+        # The buy box hydrates client-side. Wait for it to declare itself one
+        # way or the other, otherwise price and stock are read mid-render.
+        try:
+            await page.wait_for_function(BUY_BOX_READY_JS, timeout=15000)
+        except Exception:
+            pass
+
+        await asyncio.sleep(random.uniform(0.6, 1.2))
+
+        title = await page.title()
+        body = await page.eval_on_selector("body", "e => e.innerText")
+        prices = await page.evaluate(FLIPKART_PRICE_JS)
+
+        return parse_flipkart_page(pid, title, body, prices)
+
+    except Exception as exc:
+        return blank_pid_row(pid, f"Error: {exc}")
+
+
+async def run_flipkart_pids(pids, on_progress, headless=False, min_delay=2.0,
+                            max_delay=5.0, should_stop=None):
+    results = []
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=headless)
+        context = await browser.new_context(locale="en-IN", user_agent=USER_AGENT)
+        page = await context.new_page()
+
+        try:
+            for index, pid in enumerate(pids, start=1):
+                if should_stop and should_stop():
+                    await on_progress("log", {"message": "Stopped by user."})
+                    break
+
+                await on_progress("log", {"message": f"[{index}/{len(pids)}] {pid}"})
+
+                row = await scrape_flipkart_pid(page, pid)
+                results.append(row)
+
+                await on_progress("row", {"row": row, "done": index, "total": len(pids)})
+
+                if index < len(pids):
+                    await asyncio.sleep(random.uniform(min_delay, max_delay))
+
+        finally:
+            await context.close()
+            await browser.close()
+
+    return results

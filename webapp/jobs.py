@@ -57,10 +57,12 @@ class Job:
     # -- exports ---------------------------------------------------------
     @property
     def columns(self):
-        return (
-            scrapers.AMAZON_COLUMNS if self.kind == "amazon"
-            else scrapers.FLIPKART_COLUMNS
-        )
+        return scrapers.COLUMNS_BY_KIND[self.kind]
+
+    @property
+    def has_status(self):
+        """Flipkart model runs return bare names; the others carry a Status."""
+        return self.kind in {"amazon", "flipkart_pid"}
 
     def dataframe(self):
         if not self.rows:
@@ -86,7 +88,7 @@ class Job:
             "status": self.status,
             "total": self.total,
             "done": len(self.rows),
-            "succeeded": succeeded if self.kind == "amazon" else len(self.rows),
+            "succeeded": succeeded if self.has_status else len(self.rows),
             "error": self.error,
             "started_at": self.started_at.isoformat(),
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
@@ -114,6 +116,15 @@ async def run_job(job, **options):
         if job.kind == "amazon":
             await scrapers.run_amazon(
                 options["asins"],
+                job.emit,
+                headless=options.get("headless", False),
+                min_delay=options.get("min_delay", 2.0),
+                max_delay=options.get("max_delay", 5.0),
+                should_stop=job.should_stop,
+            )
+        elif job.kind == "flipkart_pid":
+            await scrapers.run_flipkart_pids(
+                options["pids"],
                 job.emit,
                 headless=options.get("headless", False),
                 min_delay=options.get("min_delay", 2.0),

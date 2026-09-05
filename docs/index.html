@@ -77,9 +77,9 @@
     </div>
     <div class="card">
       <h3>Web tool</h3>
-      <p>Both scrapers behind one local page. Paste ASINs or upload a sheet, watch rows
-         land live, stop a run mid-flight, and download <code>.xlsx</code> or
-         <code>.csv</code> when it's done.</p>
+      <p>All three scrapers behind one local page — Amazon ASINs, Flipkart PIDs, and
+         Flipkart model lists. Paste ids or upload a sheet, watch rows land live, stop a
+         run mid-flight, and download <code>.xlsx</code> or <code>.csv</code>.</p>
     </div>
     <div class="card">
       <h3>Flipkart console snippet</h3>
@@ -104,8 +104,8 @@ playwright install chromium</code></pre>
   <h3>Run the web tool</h3>
 <pre><code>python -m webapp        # Windows: run_webtool.bat</code></pre>
   <p class="muted">Open <code>http://127.0.0.1:8000</code>. One tab for Amazon ASINs,
-     one for Flipkart models; results stream in as they're scraped and export to Excel
-     or CSV. Start it without <code>--reload</code> — reload mode puts uvicorn on a
+     one for Flipkart PIDs, one for Flipkart model lists; results stream in as they're
+     scraped and export to Excel or CSV. Start it without <code>--reload</code> — reload mode puts uvicorn on a
      selector event loop that can't launch Playwright's browser on Windows.</p>
 
   <h3>Run the Amazon scraper from the CLI</h3>
@@ -138,6 +138,16 @@ playwright install chromium</code></pre>
      <code>Status = "Blocked/Not Found"</code> and an exception returns
      <code>Status = "Error: …"</code>. Either way the run continues and the row is kept,
      so a single bad ASIN never costs you the batch.</p>
+  <p><strong>The Flipkart PID URL matters.</strong> <code>/product/p/itm?pid=…</code>
+     serves a generic "Itm Store" page that ignores the pid entirely — every id comes
+     back as the same product. <code>/product/p/itme?pid=…</code>, with the trailing
+     <code>e</code>, resolves properly. One character, and it silently corrupts a whole
+     batch rather than erroring.</p>
+  <p><strong>Prices are scoped to the buy box.</strong> The product's own price renders
+     large and high on the page; the "Similar Products" carousel prices are small and far
+     below. Reading the first <code>₹</code> in the page text picks up a carousel price
+     whenever the buy box is empty, so the scraper measures font size and position
+     instead — and waits for the buy box to hydrate before reading it at all.</p>
   <p><strong>Price selectors are a chain.</strong> Amazon serves several price layouts;
      the scraper tries <code>.priceToPay</code>, then <code>.a-price</code>, then the two
      legacy <code>#priceblock_*</code> ids, and takes the first one that actually

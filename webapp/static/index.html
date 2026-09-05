@@ -12,7 +12,7 @@
   <div class="wrap headrow">
     <div>
       <h1>Web Scrapper</h1>
-      <p class="tag">Amazon ASIN details and Flipkart compatible-model lists, in the browser.</p>
+      <p class="tag">Amazon ASINs, Flipkart PIDs and Flipkart compatible-model lists, in the browser.</p>
     </div>
     <span id="conn" class="pill idle">idle</span>
   </div>
@@ -22,6 +22,7 @@
 
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="amazon" role="tab">Amazon ASINs</button>
+    <button class="tab" data-tab="flipkart_pid" role="tab">Flipkart PIDs</button>
     <button class="tab" data-tab="flipkart" role="tab">Flipkart models</button>
   </nav>
 
@@ -65,6 +66,51 @@
       <div class="actions">
         <button class="btn primary" type="submit">Start scrape</button>
         <button class="btn" type="button" id="stop-amazon" disabled>Stop</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ── Flipkart PIDs ──────────────────────────────────────────────── -->
+  <section class="panel hidden" id="panel-flipkart_pid">
+    <form id="form-flipkart_pid">
+      <label class="field">
+        <span class="label">Paste PIDs / FSN IDs</span>
+        <textarea name="pids" rows="5" placeholder="ACCGPPBXDHVVRKGH&#10;ACCHC6DFTDHGFWZC, ACCH6C74MUFMYKYY&#10;…or paste flipkart.com/…?pid= links"></textarea>
+        <span class="hint">16-character Flipkart product ids. Product URLs work too.</span>
+      </label>
+
+      <label class="field">
+        <span class="label">…or upload a sheet</span>
+        <input type="file" name="file" accept=".xlsx,.xls,.csv">
+        <span class="hint" id="pid-file-hint">Looks for an <code>FSN_ID</code> / <code>PID</code> column; falls back to the first column.</span>
+      </label>
+
+      <div class="row">
+        <label class="field small">
+          <span class="label">Min delay (s)</span>
+          <input type="number" name="min_delay" value="2" min="0" step="0.5">
+        </label>
+        <label class="field small">
+          <span class="label">Max delay (s)</span>
+          <input type="number" name="max_delay" value="5" min="0" step="0.5">
+        </label>
+        <label class="field small">
+          <span class="label">Limit (0 = all)</span>
+          <input type="number" name="limit" value="0" min="0" step="1">
+        </label>
+        <label class="check">
+          <input type="checkbox" name="headless">
+          <span>Headless browser</span>
+        </label>
+      </div>
+
+      <p class="note">Reads the product page text rather than Flipkart's class names, which
+        rotate. Prices are scoped to the buy box, so a "Similar Products" price never gets
+        mistaken for this product's.</p>
+
+      <div class="actions">
+        <button class="btn primary" type="submit">Start scrape</button>
+        <button class="btn" type="button" id="stop-flipkart_pid" disabled>Stop</button>
       </div>
     </form>
   </section>

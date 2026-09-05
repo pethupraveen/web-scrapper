@@ -32,8 +32,16 @@ async def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-def asins_from_upload(filename, raw):
-    """Pull an ASIN column out of an uploaded .xlsx/.csv, or fall back to col 0."""
+# Column names each id type answers to, and the cleaner that validates it.
+ID_KINDS = {
+    "amazon": ({"asin", "asins", "sku"}, scrapers.clean_asin),
+    "flipkart_pid": ({"fsn_id", "fsn", "pid", "pids", "product_id"}, scrapers.clean_pid),
+}
+
+
+def ids_from_upload(filename, raw, kind="amazon"):
+    """Pull the id column out of an uploaded .xlsx/.csv, or fall back to col 0."""
+    names, clean = ID_KINDS[kind]
     buffer = io.BytesIO(raw)
 
     if filename.lower().endswith(".csv"):
@@ -42,7 +50,7 @@ def asins_from_upload(filename, raw):
         df = pd.read_excel(buffer, dtype=str)
 
     column = next(
-        (c for c in df.columns if str(c).strip().lower() in {"asin", "asins", "sku"}),
+        (c for c in df.columns if str(c).strip().lower() in names),
         None,
     )
 
@@ -51,30 +59,56 @@ def asins_from_upload(filename, raw):
             raise HTTPException(400, "That file had no usable columns.")
         column = df.columns[0]
 
-    seen, asins = set(), []
+    seen, ids = set(), []
 
     for value in df[column].dropna():
-        asin = scrapers.clean_asin(value)
-        if asin and asin not in seen:
-            seen.add(asin)
-            asins.append(asin)
+        found = clean(value)
+        if found and found not in seen:
+            seen.add(found)
+            ids.append(found)
 
-    return asins
+    return ids
 
 
 @app.post("/api/preview")
-async def preview(file: UploadFile):
-    """Parse an uploaded sheet so the UI can show the ASIN count before running."""
+async def preview(file: UploadFile, kind: str = Form("amazon")):
+    """Parse an uploaded sheet so the UI can show the id count before running."""
+    if kind not in ID_KINDS:
+        raise HTTPException(400, f"Unknown id kind: {kind}")
+
     raw = await file.read()
 
     try:
-        asins = asins_from_upload(file.filename or "", raw)
+        ids = ids_from_upload(file.filename or "", raw, kind)
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(400, f"Could not read that file: {exc}")
 
-    return {"count": len(asins), "asins": asins}
+    return {"count": len(ids), "ids": ids}
+
+
+async def collect_ids(pasted, file, kind, parse_text):
+    """Merge a pasted blob and an uploaded sheet into one ordered, de-duped list."""
+    collected = parse_text(pasted)
+
+    if file is not None and file.filename:
+        raw = await file.read()
+        try:
+            collected += ids_from_upload(file.filename, raw, kind)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(400, f"Could not read that file: {exc}")
+
+    seen, unique = set(), []
+
+    for found in collected:
+        if found not in seen:
+            seen.add(found)
+            unique.append(found)
+
+    return unique
 
 
 @app.post("/api/jobs/amazon")
@@ -86,23 +120,7 @@ async def start_amazon(
     max_delay: float = Form(5.0),
     limit: int = Form(0),
 ):
-    collected = scrapers.parse_asin_text(asins)
-
-    if file is not None and file.filename:
-        raw = await file.read()
-        try:
-            collected += asins_from_upload(file.filename, raw)
-        except HTTPException:
-            raise
-        except Exception as exc:
-            raise HTTPException(400, f"Could not read that file: {exc}")
-
-    # De-dupe across the pasted list and the uploaded sheet, keeping order.
-    seen, unique = set(), []
-    for asin in collected:
-        if asin not in seen:
-            seen.add(asin)
-            unique.append(asin)
+    unique = await collect_ids(asins, file, "amazon", scrapers.parse_asin_text)
 
     if not unique:
         raise HTTPException(400, "No valid ASINs found. Paste some, or upload a sheet with an ASIN column.")
@@ -118,6 +136,43 @@ async def start_amazon(
         run_job(
             job,
             asins=unique,
+            headless=headless,
+            min_delay=min_delay,
+            max_delay=max_delay,
+        )
+    )
+
+    return job.summary()
+
+
+@app.post("/api/jobs/flipkart-pids")
+async def start_flipkart_pids(
+    pids: str = Form(""),
+    file: UploadFile | None = None,
+    headless: bool = Form(False),
+    min_delay: float = Form(2.0),
+    max_delay: float = Form(5.0),
+    limit: int = Form(0),
+):
+    unique = await collect_ids(pids, file, "flipkart_pid", scrapers.parse_pid_text)
+
+    if not unique:
+        raise HTTPException(
+            400,
+            "No valid PIDs found. Paste some, or upload a sheet with an FSN_ID column.",
+        )
+
+    if limit > 0:
+        unique = unique[:limit]
+
+    if max_delay < min_delay:
+        min_delay, max_delay = max_delay, min_delay
+
+    job = register(Job("flipkart_pid", len(unique), f"{len(unique)} PIDs"))
+    job.task = asyncio.create_task(
+        run_job(
+            job,
+            pids=unique,
             headless=headless,
             min_delay=min_delay,
             max_delay=max_delay,

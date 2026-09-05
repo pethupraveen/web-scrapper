@@ -3,39 +3,65 @@ const $ = sel => document.querySelector(sel);
 let activeJob = null;
 let source = null;
 
+const COLUMNS = {
+  amazon: ['ASIN', 'Status', 'Title', 'Price', 'Rating', 'ReviewCount', 'Bullets'],
+  flipkart_pid: ['PID', 'Status', 'Name', 'Rating', 'RatingCount', 'ReviewCount',
+                 'Price', 'MRP', 'Stock'],
+  flipkart: ['model'],
+};
+
+const KIND_LABELS = {
+  amazon: 'Amazon',
+  flipkart_pid: 'Flipkart PIDs',
+  flipkart: 'Flipkart models',
+};
+
 // ── tabs ────────────────────────────────────────────────────────────────
+const TABS = ['amazon', 'flipkart_pid', 'flipkart'];
+
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
-    $('#panel-amazon').classList.toggle('hidden', tab.dataset.tab !== 'amazon');
-    $('#panel-flipkart').classList.toggle('hidden', tab.dataset.tab !== 'flipkart');
+    TABS.forEach(name => {
+      $(`#panel-${name}`).classList.toggle('hidden', tab.dataset.tab !== name);
+    });
   });
 });
 
 // ── file preview ────────────────────────────────────────────────────────
-$('#form-amazon').file.addEventListener('change', async event => {
-  const file = event.target.files[0];
-  const hint = $('#file-hint');
+wirePreview('#form-amazon', '#file-hint', 'amazon', 'ASIN',
+  'Looks for an ASIN column; falls back to the first column.');
+wirePreview('#form-flipkart_pid', '#pid-file-hint', 'flipkart_pid', 'PID',
+  'Looks for an FSN_ID / PID column; falls back to the first column.');
 
-  if (!file) { hint.textContent = 'Looks for an ASIN column; falls back to the first column.'; return; }
+function wirePreview(formSel, hintSel, kind, noun, idleText) {
+  $(formSel).file.addEventListener('change', async event => {
+    const file = event.target.files[0];
+    const hint = $(hintSel);
 
-  hint.textContent = 'Reading…';
-  const body = new FormData();
-  body.append('file', file);
+    if (!file) { hint.textContent = idleText; return; }
 
-  try {
-    const res = await fetch('/api/preview', { method: 'POST', body });
-    const data = await res.json();
-    hint.textContent = res.ok
-      ? `${data.count} unique ASIN${data.count === 1 ? '' : 's'} found in ${file.name}.`
-      : data.error;
-  } catch (err) {
-    hint.textContent = `Could not read that file: ${err.message}`;
-  }
-});
+    hint.textContent = 'Reading…';
+    const body = new FormData();
+    body.append('file', file);
+    body.append('kind', kind);
+
+    try {
+      const res = await fetch('/api/preview', { method: 'POST', body });
+      const data = await res.json();
+      hint.textContent = res.ok
+        ? `${data.count} unique ${noun}${data.count === 1 ? '' : 's'} found in ${file.name}.`
+        : data.error;
+    } catch (err) {
+      hint.textContent = `Could not read that file: ${err.message}`;
+    }
+  });
+}
 
 // ── starting a run ──────────────────────────────────────────────────────
 $('#form-amazon').addEventListener('submit', e => start(e, '/api/jobs/amazon', '#stop-amazon'));
+$('#form-flipkart_pid').addEventListener('submit',
+  e => start(e, '/api/jobs/flipkart-pids', '#stop-flipkart_pid'));
 $('#form-flipkart').addEventListener('submit', e => start(e, '/api/jobs/flipkart', '#stop-flipkart'));
 
 async function start(event, endpoint, stopSel) {
@@ -71,15 +97,14 @@ function attach(summary, stopSel) {
   if (source) source.close();
 
   $('#run').classList.remove('hidden');
-  $('#run-title').textContent =
-    summary.kind === 'amazon' ? `Amazon — ${summary.label}` : 'Flipkart — compatible models';
+  $('#run-title').textContent = summary.kind === 'flipkart'
+    ? 'Flipkart — compatible models'
+    : `${KIND_LABELS[summary.kind]} — ${summary.label}`;
   $('#log').textContent = '';
   $('#body').innerHTML = '';
   $('#bar').style.width = '0%';
 
-  const columns = summary.kind === 'amazon'
-    ? ['ASIN', 'Status', 'Title', 'Price', 'Rating', 'ReviewCount', 'Bullets']
-    : ['model'];
+  const columns = COLUMNS[summary.kind];
 
   $('#head').innerHTML = columns.map(c => `<th>${c}</th>`).join('');
 
@@ -139,7 +164,7 @@ function setStatus(summary) {
 
   const parts = [`${summary.done}${summary.total ? ` / ${summary.total}` : ''} rows`];
 
-  if (summary.kind === 'amazon') parts.push(`${summary.succeeded} succeeded`);
+  if (summary.kind !== 'flipkart') parts.push(`${summary.succeeded} succeeded`);
   if (summary.error) parts.push(summary.error);
 
   $('#run-sub').textContent = parts.join(' · ');
@@ -163,7 +188,7 @@ function addRow(columns, row) {
       td.className = /^Success/.test(value) ? 'st-success'
         : /^Error/.test(value) ? 'st-error' : 'st-blocked';
       td.textContent = value ?? '';
-    } else if (column === 'ASIN' && row.URL) {
+    } else if ((column === 'ASIN' || column === 'PID') && row.URL) {
       const a = document.createElement('a');
       a.href = row.URL; a.target = '_blank'; a.rel = 'noopener';
       a.textContent = value ?? '';
@@ -193,7 +218,7 @@ async function loadHistory() {
 
   $('#history').innerHTML = past.map(job => `
     <li>
-      <span>${job.kind === 'amazon' ? 'Amazon' : 'Flipkart'} · ${escapeHtml(job.label)}
+      <span>${KIND_LABELS[job.kind] || job.kind} · ${escapeHtml(job.label)}
         <span class="muted">— ${job.status}, ${job.done} rows</span></span>
       <span>
         <a href="/api/jobs/${job.id}/download.xlsx">xlsx</a> ·
