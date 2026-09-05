@@ -60,8 +60,8 @@
 <header>
   <h1>Web Scrapper</h1>
   <p class="tag">A small toolkit for pulling product data off Indian e-commerce sites —
-     a Playwright scraper for Amazon ASINs, and a zero-install console snippet for
-     Flipkart's compatible-models list.</p>
+     a Playwright scraper for Amazon ASINs, a console snippet for Flipkart's
+     compatible-models list, and a local web tool that drives both from your browser.</p>
   <a class="btn primary" href="https://github.com/pethupraveen/web-scrapper">View on GitHub</a>
   <a class="btn" href="#quickstart">Quick start</a>
 </header>
@@ -74,6 +74,12 @@
       <p>Feed it a spreadsheet of ASINs. It opens each <code>amazon.in/dp/&lt;ASIN&gt;</code>
          page in a real Chromium window, parses the DOM with BeautifulSoup, and writes
          one row per product to Excel.</p>
+    </div>
+    <div class="card">
+      <h3>Web tool</h3>
+      <p>Both scrapers behind one local page. Paste ASINs or upload a sheet, watch rows
+         land live, stop a run mid-flight, and download <code>.xlsx</code> or
+         <code>.csv</code> when it's done.</p>
     </div>
     <div class="card">
       <h3>Flipkart console snippet</h3>
@@ -95,14 +101,21 @@ python -m venv .venv
 pip install -r requirements.txt
 playwright install chromium</code></pre>
 
-  <h3>Run the Amazon scraper</h3>
+  <h3>Run the web tool</h3>
+<pre><code>python -m webapp        # Windows: run_webtool.bat</code></pre>
+  <p class="muted">Open <code>http://127.0.0.1:8000</code>. One tab for Amazon ASINs,
+     one for Flipkart models; results stream in as they're scraped and export to Excel
+     or CSV. Start it without <code>--reload</code> — reload mode puts uvicorn on a
+     selector event loop that can't launch Playwright's browser on Windows.</p>
+
+  <h3>Run the Amazon scraper from the CLI</h3>
   <p>Drop an <code>input_asins.xlsx</code> beside the script with an <code>ASIN</code>
      column, then:</p>
 <pre><code>python Amazon_Updated_Script.py</code></pre>
   <p class="muted">Output goes to <code>scraped_amazon_results.xlsx</code>, one row per ASIN:</p>
   <ul class="fields">
     <li>ASIN</li><li>Status</li><li>Title</li><li>Price</li>
-    <li>Rating</li><li>ReviewCount</li><li>Bullets</li>
+    <li>Rating</li><li>ReviewCount</li><li>Bullets</li><li>URL</li>
   </ul>
 
   <h3>Run the Flipkart snippet</h3>
@@ -127,7 +140,8 @@ playwright install chromium</code></pre>
      so a single bad ASIN never costs you the batch.</p>
   <p><strong>Price selectors are a chain.</strong> Amazon serves several price layouts;
      the scraper tries <code>.priceToPay</code>, then <code>.a-price</code>, then the two
-     legacy <code>#priceblock_*</code> ids, and takes the first hit.</p>
+     legacy <code>#priceblock_*</code> ids, and takes the first one that actually
+     carries text — a matching node with an empty label doesn't end the search.</p>
   <p class="note">Excel inputs and outputs are gitignored — the repo holds the code,
      not the data. Scrape responsibly and within each site's terms of use.</p>
 </section>

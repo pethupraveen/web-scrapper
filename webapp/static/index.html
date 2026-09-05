@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Scrapper — Amazon &amp; Flipkart tool</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap headrow">
+    <div>
+      <h1>Web Scrapper</h1>
+      <p class="tag">Amazon ASIN details and Flipkart compatible-model lists, in the browser.</p>
+    </div>
+    <span id="conn" class="pill idle">idle</span>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="amazon" role="tab">Amazon ASINs</button>
+    <button class="tab" data-tab="flipkart" role="tab">Flipkart models</button>
+  </nav>
+
+  <!-- ── Amazon ─────────────────────────────────────────────────────── -->
+  <section class="panel" id="panel-amazon">
+    <form id="form-amazon">
+      <label class="field">
+        <span class="label">Paste ASINs</span>
+        <textarea name="asins" rows="5" placeholder="B0CHX1W1XY&#10;B09G9BL5CD, B0BDHWDR12&#10;…or paste amazon.in/dp/ links"></textarea>
+        <span class="hint">One per line, or separated by commas/spaces. Product URLs work too.</span>
+      </label>
+
+      <label class="field">
+        <span class="label">…or upload a sheet</span>
+        <input type="file" name="file" accept=".xlsx,.xls,.csv">
+        <span class="hint" id="file-hint">Looks for an <code>ASIN</code> column; falls back to the first column.</span>
+      </label>
+
+      <div class="row">
+        <label class="field small">
+          <span class="label">Min delay (s)</span>
+          <input type="number" name="min_delay" value="2" min="0" step="0.5">
+        </label>
+        <label class="field small">
+          <span class="label">Max delay (s)</span>
+          <input type="number" name="max_delay" value="5" min="0" step="0.5">
+        </label>
+        <label class="field small">
+          <span class="label">Limit (0 = all)</span>
+          <input type="number" name="limit" value="0" min="0" step="1">
+        </label>
+        <label class="check">
+          <input type="checkbox" name="headless">
+          <span>Headless browser</span>
+        </label>
+      </div>
+
+      <p class="note">Headful gets blocked far less often — leave headless off unless you know
+        the run is going through. A Chromium window will open; don't close it mid-run.</p>
+
+      <div class="actions">
+        <button class="btn primary" type="submit">Start scrape</button>
+        <button class="btn" type="button" id="stop-amazon" disabled>Stop</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ── Flipkart ───────────────────────────────────────────────────── -->
+  <section class="panel hidden" id="panel-flipkart">
+    <form id="form-flipkart">
+      <label class="field">
+        <span class="label">Flipkart listing URL</span>
+        <input type="url" name="url" placeholder="https://www.flipkart.com/search?q=mobile+cover" required>
+        <span class="hint">A listing page that has the <strong>Compatible Mobiles</strong> filter.</span>
+      </label>
+
+      <label class="check">
+        <input type="checkbox" name="headless">
+        <span>Headless browser</span>
+      </label>
+
+      <p class="note">The tool tries to open the filter overlay itself. If it can't, it says so and
+        waits ~12s — open the overlay in the Chromium window it launched and it will carry on.</p>
+
+      <div class="actions">
+        <button class="btn primary" type="submit">Collect models</button>
+        <button class="btn" type="button" id="stop-flipkart" disabled>Stop</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- ── Run output ─────────────────────────────────────────────────── -->
+  <section class="panel run hidden" id="run">
+    <div class="run-head">
+      <div>
+        <h2 id="run-title">Run</h2>
+        <p class="muted" id="run-sub"></p>
+      </div>
+      <div class="downloads">
+        <a class="btn" id="dl-xlsx" href="#" download>Download .xlsx</a>
+        <a class="btn" id="dl-csv" href="#" download>Download .csv</a>
+      </div>
+    </div>
+
+    <div class="progress"><div class="progress-fill" id="bar"></div></div>
+
+    <details class="logbox" open>
+      <summary>Log</summary>
+      <pre id="log"></pre>
+    </details>
+
+    <div class="tablewrap">
+      <table id="results">
+        <thead><tr id="head"></tr></thead>
+        <tbody id="body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel history hidden" id="history-panel">
+    <h2>Earlier runs</h2>
+    <ul id="history"></ul>
+  </section>
+
+</main>
+
+<footer class="wrap">
+  <p>Runs locally against your own browser session. Scrape responsibly and within each
+    site's terms of use.</p>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

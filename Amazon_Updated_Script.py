@@ -62,7 +62,7 @@ def scrape_product(page, asin):
         for selector in price_selectors:
             tag = soup.select_one(selector)
 
-            if tag:
+            if tag and tag.get_text(strip=True):
                 price = tag.get_text(strip=True)
                 break
 

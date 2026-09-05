@@ -19,3 +19,6 @@ __pycache__/
 # OS
 Thumbs.db
 .DS_Store
+
+# Scraper output CSVs
+compatible_mobiles.csv
