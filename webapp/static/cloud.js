@@ -86,12 +86,13 @@ async function startCloud(form, stopSel) {
     $('#run').scrollIntoView({ behavior: 'smooth', block: 'start' });
     const min = Math.max(0, Math.min(60, Number(body.get('min_delay')) || 0));
     const max = Math.max(min, Math.min(60, Number(body.get('max_delay')) || min));
+    let preferBrowser = false;
     for (const [index, value] of prepared.values.entries()) {
       if (cloudStop) break;
       log(`[${index + 1}/${prepared.values.length}] ${value}`);
       let data;
       try {
-        data = await requestCloudProduct(kind, value);
+        data = await requestCloudProduct(kind, value, preferBrowser);
       } catch (error) {
         log(`Could not fetch ${value}: ${error.message}. Continuing with the next product.`);
         data = { rows: [{ [kind === 'amazon' ? 'ASIN' : 'PID']: value,
@@ -100,6 +101,13 @@ async function startCloud(form, stopSel) {
             : `https://www.flipkart.com/product/p/itme?pid=${value}` }], logs: [] };
       }
       data.logs.forEach(log);
+      if (kind === 'amazon' && data.method === 'browser') {
+        const recovered = data.rows.some(row => row.Status === 'Success');
+        if (recovered && !preferBrowser) {
+          log('Using browser scraping for the remaining ASINs in this run.');
+        }
+        preferBrowser = recovered;
+      }
       for (const row of data.rows) {
         cloudRun.rows.push(row);
         addRow(columns, row);
@@ -133,12 +141,12 @@ async function startCloud(form, stopSel) {
   }
 }
 
-async function requestCloudProduct(kind, value) {
+async function requestCloudProduct(kind, value, preferBrowser = false) {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const response = await fetch('/api/cloud/scrape', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, value }),
+        body: JSON.stringify({ kind, value, prefer_browser: preferBrowser }),
       });
       if (attempt === 0 && [429, 502, 503, 504].includes(response.status)) {
         log(`Temporary server error for ${value}; retrying the request.`);

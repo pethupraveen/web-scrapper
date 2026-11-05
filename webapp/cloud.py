@@ -57,10 +57,12 @@ async def _lightweight_route(route):
         await route.continue_()
 
 
-async def scrape_cloud_product(kind, value, logs):
+async def scrape_cloud_product(kind, value, logs, prefer_browser=False, outcome=None):
     """Bounded recovery per product; a failed browser never poisons the next item."""
     row = None
     best_row = None
+    if outcome is not None:
+        outcome["method"] = "html"
     if kind == "flipkart_pid":
         for attempt in range(2):
             try:
@@ -73,7 +75,7 @@ async def scrape_cloud_product(kind, value, logs):
                 print(f"Flipkart HTML request failed for {value}: {exc}", flush=True)
             if attempt == 0:
                 await asyncio.sleep(2)
-    if kind == "amazon":
+    if kind == "amazon" and not prefer_browser:
         for attempt in range(2):
             try:
                 row = await fetch_amazon_html(value)
@@ -86,12 +88,18 @@ async def scrape_cloud_product(kind, value, logs):
                     logs.append("Product HTML found; checking the browser for its price.")
                     break
                 logs.append(f"HTML attempt {attempt + 1}: {row['Status']}.")
+                if row["Status"].startswith("Blocked"):
+                    # An explicit block needs a browser, not another identical HTTP request.
+                    print(f"Amazon HTML blocked for {value}: {row['Status']}; switching to browser", flush=True)
+                    break
             except (httpx.HTTPError, OSError) as exc:
                 logs.append(f"HTML attempt {attempt + 1}: connection failed; retrying.")
                 print(f"Amazon HTML request failed for {value}: {exc}", flush=True)
             if attempt == 0:
                 await asyncio.sleep(2)
 
+    if outcome is not None:
+        outcome["method"] = "browser"
     async with _browser_slot:
         for attempt in range(2):
             browser = None
@@ -101,7 +109,7 @@ async def scrape_cloud_product(kind, value, logs):
                         browser = await launch_browser(playwright, headless=True)
                         context = await browser.new_context(
                             locale="en-IN", user_agent=CLOUD_USER_AGENT,
-                            java_script_enabled=kind != "amazon" or attempt == 1, service_workers="block",
+                            java_script_enabled=True, service_workers="block",
                             viewport={"width": 1280, "height": 720},
                         )
                         await context.route("**/*", _lightweight_route)
@@ -146,6 +154,7 @@ async def scrape_cloud_product(kind, value, logs):
 class ScrapeRequest(BaseModel):
     kind: Kind
     value: str = Field(min_length=1, max_length=4096)
+    prefer_browser: bool = False
 
 
 class ExportRequest(BaseModel):
@@ -157,13 +166,15 @@ class ExportRequest(BaseModel):
 async def scrape(body: ScrapeRequest):
     logs = []
     rows = []
+    outcome = {}
 
     cleaner = scrapers.clean_asin if body.kind == "amazon" else scrapers.clean_pid
     if cleaner(body.value) != body.value:
         raise HTTPException(400, "Invalid product ID.")
 
     async def run():
-        rows.append(await scrape_cloud_product(body.kind, body.value, logs))
+        rows.append(await scrape_cloud_product(body.kind, body.value, logs,
+                                               prefer_browser=body.prefer_browser, outcome=outcome))
 
     try:
         await asyncio.wait_for(run(), timeout=240)
@@ -173,7 +184,11 @@ async def scrape(body: ScrapeRequest):
         # Runtime failures are distinct from a retailer blocking a product page.
         print(f"Cloud browser failure: {exc}", flush=True)
         raise HTTPException(502, "The cloud browser could not finish this request. Please retry.")
-    return {"rows": rows, "logs": logs}
+    if rows and rows[0]["Status"] == "Success" and outcome.get("method") == "browser":
+        # Recovered attempts are diagnostics, not failed product results.
+        price_notes = [message for message in logs if "did not return a product price" in message]
+        logs = ["Product scraped successfully using browser.", *price_notes]
+    return {"rows": rows, "logs": logs, "method": outcome.get("method", "html")}
 
 
 @router.post("/export/{format}")

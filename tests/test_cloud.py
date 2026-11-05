@@ -59,6 +59,30 @@ class CloudApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["rows"], [product])
         launch.assert_not_awaited()
 
+    async def test_browser_preference_uses_the_local_scraping_function_without_html_attempts(self):
+        browser = AsyncMock()
+        product = {"ASIN": "B0GL2ZGQLX", "Status": "Success", "Title": "Example", "Price": "₹499"}
+        with patch("webapp.cloud.fetch_amazon_html", AsyncMock()) as html, \
+                patch("webapp.cloud.launch_browser", AsyncMock(return_value=browser)), \
+                patch("webapp.cloud.scrapers.scrape_amazon_product", AsyncMock(return_value=product)) as scraper:
+            response = await self.client.post("/api/cloud/scrape", json={
+                "kind": "amazon", "value": "B0GL2ZGQLX", "prefer_browser": True})
+        html.assert_not_awaited()
+        scraper.assert_awaited_once()
+        self.assertTrue(browser.new_context.call_args.kwargs["java_script_enabled"])
+        self.assertEqual(response.json()["method"], "browser")
+        self.assertEqual(response.json()["rows"], [product])
+
+    async def test_html_503_switches_to_browser_once_and_reports_recovery(self):
+        product = {"ASIN": "B0GL2ZGQLX", "Status": "Success", "Title": "Recovered", "Price": "₹499"}
+        with patch("webapp.cloud.fetch_amazon_html", AsyncMock(return_value={"Status": "Blocked by Amazon (HTTP 503)"})) as html, \
+                patch("webapp.cloud.launch_browser", AsyncMock(return_value=AsyncMock())), \
+                patch("webapp.cloud.scrapers.scrape_amazon_product", AsyncMock(return_value=product)):
+            response = await self.client.post("/api/cloud/scrape", json={"kind": "amazon", "value": "B0GL2ZGQLX"})
+        html.assert_awaited_once()
+        self.assertEqual(response.json()["method"], "browser")
+        self.assertEqual(response.json()["logs"], ["Product scraped successfully using browser."])
+
     async def test_flipkart_without_active_offer_does_not_need_a_browser(self):
         product = {"PID": "ACCH2Z7TQKMYGE3P", "Status": "Success", "Name": "iPhone cover",
                    "Price": None, "Stock": "Unavailable", "RatingCount": "695", "ReviewCount": "60"}

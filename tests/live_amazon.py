@@ -18,15 +18,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="https://web-scrapper-umber.vercel.app")
     parser.add_argument("--kind", choices=["amazon", "flipkart_pid"], default="amazon")
+    parser.add_argument("--values", nargs="+", help="Override the regression product IDs")
+    parser.add_argument("--prefer-browser", action="store_true")
     parser.add_argument("--vercel", action="store_true", help="Use Vercel CLI for a protected preview")
     args = parser.parse_args()
-    values = ASINS if args.kind == "amazon" else PIDS
+    values = args.values or (ASINS if args.kind == "amazon" else PIDS)
+    prefer_browser = args.prefer_browser
     artifact = Path(".vercel")
     artifact.mkdir(exist_ok=True)
     results = []
     with httpx.Client(timeout=280) as client:
         for asin in values:
-            body = {"kind": args.kind, "value": asin}
+            body = {"kind": args.kind, "value": asin, "prefer_browser": prefer_browser}
             start = time.monotonic()
             if args.vercel:
                 request = artifact / f"{args.kind}-test-request.json"
@@ -41,10 +44,12 @@ def main():
                 response.raise_for_status()
                 data = response.json()
             row = data.get("rows", [{}])[0]
-            record = {"asin": asin, "seconds": round(time.monotonic() - start, 1), **data}
+            record = {"value": asin, "prefer_browser": prefer_browser, "seconds": round(time.monotonic() - start, 1), **data}
             results.append(record)
+            if args.kind == "amazon" and data.get("method") == "browser":
+                prefer_browser = row.get("Status") == "Success"
             print(f"{asin}: {row.get('Status', data.get('error'))} ({record['seconds']}s); "
-                  f"price={row.get('Price')}; rating={row.get('Rating')}; stock={row.get('Stock')}; "
+                  f"method={data.get('method')}; price={row.get('Price')}; rating={row.get('Rating')}; stock={row.get('Stock')}; "
                   f"title={row.get('Title') or row.get('Name')}", flush=True)
             time.sleep(3)
     (artifact / f"{args.kind}-verification.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")

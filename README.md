@@ -51,6 +51,11 @@ Amazon reads the product HTML first and falls back to a lightweight browser with
 images, media, and fonts disabled. Temporary failures are retried with a fresh
 browser; failed requests produce an error row and do not stop the rest of a batch.
 Missing product ratings stay blank rather than picking up carousel text.
+If Amazon rejects HTML access, the run switches to the same Playwright product
+scraping function used locally. Following ASINs in that batch go straight to the
+browser after a successful recovery. Logs show the recovered product as a success;
+unrecovered blocks remain visible. Vercel still uses headless cloud browsers and
+cloud IP addresses, so retailer access can differ from a local browser session.
 
 Flipkart reads the requested PID's embedded product data before launching a
 browser. This includes rating/review counts and MRP, and avoids reading prices

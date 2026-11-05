@@ -13,16 +13,18 @@ async def main(base="https://web-scrapper-umber.vercel.app"):
         browser = await playwright.chromium.launch(headless=True)
         page = await browser.new_page(accept_downloads=True)
         errors = []
+        product_requests = []
         page.on("pageerror", lambda error: errors.append(str(error)))
 
         async def product(route):
             body = route.request.post_data_json
+            product_requests.append(body)
             if body["value"] == "B09G9BL5CD":
                 await route.fulfill(status=502, json={"error": "Simulated temporary browser failure"})
                 return
             await route.fulfill(json={"rows": [{"ASIN": body["value"], "Status": "Success",
                 "Title": "UI verification fixture", "Price": "₹100", "Rating": "4",
-                "ReviewCount": "10", "Bullets": "Example", "URL": "https://www.amazon.in/"}], "logs": []})
+                "ReviewCount": "10", "Bullets": "Example", "URL": "https://www.amazon.in/"}], "logs": [], "method": "browser"})
 
         await page.route("**/api/cloud/scrape", product)
         await page.goto(base, wait_until="networkidle")
@@ -39,6 +41,8 @@ async def main(base="https://web-scrapper-umber.vercel.app"):
         assert await page.locator("#body tr").count() == 3
         assert '2 succeeded' in await page.locator('#run-sub').inner_text()
         assert 'Continuing with the next product' in await page.locator('#log').inner_text()
+        assert product_requests[0]['prefer_browser'] is False
+        assert all(body['prefer_browser'] for body in product_requests[1:])
         for format in ("csv", "xlsx"):
             async with page.expect_download() as info:
                 await page.locator(f"#dl-{format}").click()
