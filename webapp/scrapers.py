@@ -13,6 +13,12 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
+from .browser import CLOUD, launch_browser
+
+
+class ListingFilterError(Exception):
+    """The listing does not expose the filter needed for model collection."""
+
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -149,7 +155,7 @@ async def run_amazon(asins, on_progress, headless=False, min_delay=2.0, max_dela
     results = []
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=headless)
+        browser = await launch_browser(p, headless=headless)
         context = await browser.new_context(locale="en-IN", user_agent=USER_AGENT)
         page = await context.new_page()
 
@@ -190,7 +196,7 @@ FLIPKART_PRICE_JS = Path(__file__).with_name("flipkart_price.js").read_text(
 async def run_flipkart(url, on_progress, headless=False, should_stop=None):
     """Open a Flipkart listing, expand the Compatible Mobiles filter, harvest it."""
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=headless)
+        browser = await launch_browser(p, headless=headless)
         context = await browser.new_context(locale="en-IN", user_agent=USER_AGENT)
         page = await context.new_page()
 
@@ -215,6 +221,10 @@ async def run_flipkart(url, on_progress, headless=False, should_stop=None):
                 await on_progress("log", {"message": "Filter opened, waiting for the overlay."})
                 await asyncio.sleep(3)
             else:
+                if CLOUD:
+                    raise ListingFilterError(
+                        "This listing did not expose the Compatible Mobiles filter. "
+                        "Try a category listing with that filter; Flipkart may also have blocked the page.")
                 await on_progress("log", {
                     "message": "Could not click the filter automatically — "
                                "open it in the browser window, then wait.",
@@ -225,7 +235,14 @@ async def run_flipkart(url, on_progress, headless=False, should_stop=None):
                 return []
 
             await on_progress("log", {"message": "Scrolling the model list…"})
-            models = await page.evaluate(FLIPKART_COLLECT_JS)
+            try:
+                models = await page.evaluate(FLIPKART_COLLECT_JS)
+            except Exception as exc:
+                if CLOUD and ('Search Compatible Mobile' in str(exc) or 'not the list container' in str(exc)):
+                    raise ListingFilterError(
+                        "The Compatible Mobiles filter could not be read. "
+                        "Try a category listing with that filter, or retry the page.") from exc
+                raise
 
             await on_progress("log", {"message": f"Collected {len(models)} models."})
 
@@ -398,7 +415,7 @@ async def run_flipkart_pids(pids, on_progress, headless=False, min_delay=2.0,
     results = []
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=headless)
+        browser = await launch_browser(p, headless=headless)
         context = await browser.new_context(locale="en-IN", user_agent=USER_AGENT)
         page = await context.new_page()
 

@@ -19,17 +19,34 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from . import scrapers
+from .browser import CLOUD
+from .cloud import router as cloud_router, listing_url
 from .jobs import JOBS, Job, register, run_job
 
 STATIC_DIR = Path(__file__).with_name("static")
 
 app = FastAPI(title="Web Scrapper", docs_url="/api/docs", redoc_url=None)
+app.include_router(cloud_router)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/")
 async def index():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/api/runtime.js", include_in_schema=False)
+async def runtime_config():
+    return Response(f"window.CLOUD_MODE = {str(CLOUD).lower()};",
+                    media_type="application/javascript", headers={"Cache-Control": "no-store"})
+
+
+@app.middleware("http")
+async def cloud_jobs_guard(request: Request, call_next):
+    if CLOUD and request.url.path.startswith("/api/jobs"):
+        return JSONResponse({"error": "Hosted runs use /api/cloud endpoints; batch history is saved in your browser."},
+                            status_code=409)
+    return await call_next(request)
 
 
 # Column names each id type answers to, and the cleaner that validates it.
@@ -109,6 +126,26 @@ async def collect_ids(pasted, file, kind, parse_text):
             unique.append(found)
 
     return unique
+
+
+@app.post("/api/cloud/prepare")
+async def prepare_cloud(
+    kind: str = Form(...), asins: str = Form(""), pids: str = Form(""),
+    url: str = Form(""), file: UploadFile | None = None, limit: int = Form(0, ge=0),
+):
+    if kind == "flipkart":
+        return {"values": [listing_url(url.strip())]}
+    if kind not in ID_KINDS:
+        raise HTTPException(400, "Unknown scraper type.")
+    pasted, parser = ((asins, scrapers.parse_asin_text) if kind == "amazon"
+                      else (pids, scrapers.parse_pid_text))
+    ids = await collect_ids(pasted, file, kind, parser)
+    if not ids:
+        raise HTTPException(400, "No valid product IDs found.")
+    ids = ids[:limit] if limit else ids
+    if len(ids) > 10000:
+        raise HTTPException(400, "Use at most 10,000 products per run.")
+    return {"values": ids}
 
 
 @app.post("/api/jobs/amazon")

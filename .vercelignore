@@ -1,0 +1,12 @@
+.git
+.venv
+.venv-1
+venv
+env
+.vscode
+**/__pycache__
+*.xlsx
+*.csv
+docs
+tests
+webapp/browser_bin

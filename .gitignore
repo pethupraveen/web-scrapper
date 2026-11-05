@@ -22,3 +22,9 @@ Thumbs.db
 
 # Scraper output CSVs
 compatible_mobiles.csv
+
+# Vercel project link and generated browser bundle
+.vercel/
+webapp/browser_bin/
+
+.vercel

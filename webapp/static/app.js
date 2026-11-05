@@ -67,6 +67,8 @@ $('#form-flipkart').addEventListener('submit', e => start(e, '/api/jobs/flipkart
 async function start(event, endpoint, stopSel) {
   event.preventDefault();
 
+  if (window.CLOUD_MODE) return startCloud(event.target, stopSel);
+
   const form = event.target;
   const body = new FormData(form);
 
@@ -207,6 +209,7 @@ function addRow(columns, row) {
 
 // ── history ─────────────────────────────────────────────────────────────
 async function loadHistory() {
+  if (window.CLOUD_MODE) return loadCloudHistory();
   let jobs = [];
 
   try {
@@ -233,4 +236,5 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+if (window.CLOUD_MODE) setupCloudUI();
 loadHistory();
