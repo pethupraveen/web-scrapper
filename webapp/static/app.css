@@ -90,6 +90,7 @@ td a{color:var(--accent)}
 .st-success{color:var(--ok)}
 .st-blocked{color:var(--warn)}
 .st-error{color:var(--err)}
+td.st-success,td.st-blocked,td.st-error{min-width:160px;max-width:260px;overflow-wrap:break-word}
 
 .history ul{list-style:none;padding:0;margin:0}
 .history li{display:flex;justify-content:space-between;gap:12px;align-items:center;

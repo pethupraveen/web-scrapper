@@ -6,6 +6,8 @@ callback so the web layer can stream it to the browser.
 """
 
 import asyncio
+import json
+import math
 import random
 import re
 from pathlib import Path
@@ -334,6 +336,98 @@ def blank_pid_row(pid, status):
     return row
 
 
+def _flipkart_money(value):
+    try:
+        amount = float(value)
+    except (ValueError, TypeError):
+        return None
+    if not math.isfinite(amount) or amount <= 0:
+        return None
+    return f"₹{amount:,.2f}".removesuffix(".00")
+
+
+def parse_flipkart_html(pid, html):
+    """Read only the requested product's embedded data, without executing scripts."""
+    soup = BeautifulSoup(html, "html.parser")
+    state = {}
+    script = soup.select_one("script#is_script")
+    if script:
+        raw = script.get_text()
+        start = raw.find("{")
+        if start >= 0:
+            try:
+                state, _ = json.JSONDecoder().raw_decode(raw[start:])
+            except (ValueError, TypeError):
+                pass
+    widget = state.get("multiWidgetState", {}) if isinstance(state, dict) else {}
+    context = widget.get("pageDataResponse", {}).get("pageContext", {})
+    meta_pid = widget.get("pageMeta", {}).get("productId")
+    context_pid = context.get("productId")
+    product = context.get("fdpEventTracking", {}).get("events", {}).get("psi", {})
+    identities = [value for value in (meta_pid, context_pid, product.get("fsn")) if value]
+    if any(value != pid for value in identities):
+        return blank_pid_row(pid, "Error: Flipkart returned a different product")
+
+    linked_product = None
+    for node in soup.select('script[type="application/ld+json"]'):
+        try:
+            data = json.loads(node.get_text())
+        except (ValueError, TypeError):
+            continue
+        nodes = data if isinstance(data, list) else [data]
+        for item in nodes:
+            if isinstance(item, dict) and "@graph" in item:
+                nodes.extend(item["@graph"])
+            if (isinstance(item, dict) and item.get("@type") == "Product"
+                    and item.get("sku") == pid):
+                linked_product = item
+                break
+        if linked_product:
+            break
+    if not identities and not linked_product:
+        return blank_pid_row(pid, "Blocked/Not Found")
+
+    linked_product = linked_product or {}
+    title = linked_product.get("name") or (soup.title.get_text() if soup.title else "")
+    row = parse_flipkart_page(pid, title, "")
+    if row["Status"] != "Success":
+        return row
+    ratings = product.get("pr") or linked_product.get("aggregateRating", {})
+    rating = ratings.get("rating", ratings.get("ratingValue"))
+    try:
+        row["Rating"] = str(rating) if rating is not None and 0 < float(rating) <= 5 else None
+    except (ValueError, TypeError):
+        row["Rating"] = None
+    for column, keys in (("RatingCount", ("ratingsCount", "ratingCount")),
+                         ("ReviewCount", ("reviewsCount", "reviewCount"))):
+        value = next((ratings[key] for key in keys if ratings.get(key) is not None), None)
+        row[column] = str(value) if value is not None else None
+
+    prices = product.get("ppd", {})
+    offers = linked_product.get("offers", {})
+    if isinstance(offers, list):
+        offers = offers[0] if offers else {}
+    row["Price"] = _flipkart_money(prices.get("finalPrice") or prices.get("fsp") or offers.get("price"))
+    row["MRP"] = _flipkart_money(prices.get("mrp"))
+    listing = product.get("pls", {})
+    reason = (listing.get("unserviceabilityReason") or
+              product.get("nb", {}).get("nonBuyablilityReason") or "")
+    availability = listing.get("availabilityStatus", "")
+    if reason == "NO_PINCODE":
+        row["Stock"] = "Location required"
+    elif listing.get("isAvailable") is True or availability == "IN_STOCK":
+        row["Stock"] = "In stock"
+    elif availability == "OUT_OF_STOCK":
+        row["Stock"] = "Out of stock"
+    elif listing.get("isAvailable") is False and not row["Price"]:
+        row["Stock"] = "Unavailable"
+    elif offers.get("availability", "").endswith("/OutOfStock"):
+        row["Stock"] = "Out of stock"
+    elif offers.get("availability", "").endswith("/InStock"):
+        row["Stock"] = "In stock"
+    return row
+
+
 def parse_flipkart_page(pid, title, body, prices=None):
     """Pull the product fields out of the rendered page text.
 
@@ -347,12 +441,14 @@ def parse_flipkart_page(pid, title, body, prices=None):
     # A pid that doesn't resolve lands on the generic store page.
     if name and re.match(r"^Itm Store\b", name, re.I):
         return blank_pid_row(pid, "Not Found")
+    if not name or re.match(r"^(?:Access Denied|Just a moment|Online Shopping|Flipkart|Page Not Found)\b", name, re.I):
+        return blank_pid_row(pid, "Blocked/Not Found")
 
     head = CAROUSEL_RE.split(body)[0]
 
     rating_count = review_count = rating = None
 
-    match = re.search(r"based on\s*([\d,]+)\s*ratings?", head, re.I)
+    match = re.search(r"\b([\d,]+)\s*ratings?\b", head, re.I)
     if match:
         rating_count = match.group(1)
 
@@ -400,6 +496,10 @@ async def scrape_flipkart_pid(page, pid):
 
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+
+        structured = parse_flipkart_html(pid, await page.content())
+        if structured["Status"] == "Success":
+            return structured
 
         # The buy box hydrates client-side. Wait for it to declare itself one
         # way or the other, otherwise price and stock are read mid-render.

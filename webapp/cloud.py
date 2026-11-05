@@ -37,6 +37,20 @@ async def fetch_amazon_html(asin):
         return scrapers.parse_amazon_html(asin, response.text)
 
 
+async def fetch_flipkart_html(pid):
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(25, connect=8), follow_redirects=True, max_redirects=5,
+        headers={"User-Agent": CLOUD_USER_AGENT, "Accept-Language": "en-IN,en;q=0.9",
+                 "Accept": "text/html,application/xhtml+xml"},
+    ) as client:
+        response = await client.get(scrapers.FLIPKART_PID_URL.format(pid=pid))
+        if response.status_code in (404, 410):
+            return scrapers.blank_pid_row(pid, "Not Found")
+        if response.status_code != 200:
+            return scrapers.blank_pid_row(pid, f"Blocked by Flipkart (HTTP {response.status_code})")
+        return scrapers.parse_flipkart_html(pid, response.text)
+
+
 async def _lightweight_route(route):
     if route.request.resource_type in {"image", "media", "font"}:
         await route.abort()
@@ -48,6 +62,18 @@ async def scrape_cloud_product(kind, value, logs):
     """Bounded recovery per product; a failed browser never poisons the next item."""
     row = None
     best_row = None
+    if kind == "flipkart_pid":
+        for attempt in range(2):
+            try:
+                row = await fetch_flipkart_html(value)
+                if row["Status"] in {"Success", "Not Found"}:
+                    return row
+                logs.append(f"Flipkart HTML attempt {attempt + 1}: {row['Status']}.")
+            except (httpx.HTTPError, OSError) as exc:
+                logs.append(f"Flipkart HTML attempt {attempt + 1}: connection failed; retrying.")
+                print(f"Flipkart HTML request failed for {value}: {exc}", flush=True)
+            if attempt == 0:
+                await asyncio.sleep(2)
     if kind == "amazon":
         for attempt in range(2):
             try:
@@ -101,6 +127,8 @@ async def scrape_cloud_product(kind, value, logs):
                 else:
                     logs.append(f"Browser attempt {attempt + 1} did not return product data.")
                     print(f"Cloud product {kind} {value} attempt {attempt + 1}: {row['Status']}", flush=True)
+                if row["Status"] == "Not Found":
+                    return row
             except Exception as exc:
                 logs.append(f"Browser attempt {attempt + 1} failed; starting a fresh browser.")
                 print(f"Cloud browser {kind} {value} attempt {attempt + 1}: {exc}", flush=True)

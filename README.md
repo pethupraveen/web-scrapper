@@ -54,6 +54,12 @@ images, media, and fonts disabled. Temporary failures are retried with a fresh
 browser; failed requests produce an error row and do not stop the rest of a batch.
 Missing product ratings stay blank rather than picking up carousel text.
 
+Flipkart reads the requested PID's embedded product data before launching a
+browser. This includes rating/review counts and MRP, and avoids reading prices
+or ratings from recommendations. A product with no active offer still returns
+its details with a blank price and `Unavailable` stock. When Flipkart requires a
+delivery pincode to determine availability, stock is `Location required`.
+
 Hosted batches await one product request at a time, with the configured delay
 between products. Keep the tab open while a batch runs. Stop finishes the current
 page. Results and the most recent 20 runs are stored in this browser, with CSV and

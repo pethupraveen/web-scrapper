@@ -69,6 +69,15 @@ class CloudApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.json()["rows"], [product])
         launch.assert_not_awaited()
 
+    async def test_flipkart_without_active_offer_does_not_need_a_browser(self):
+        product = {"PID": "ACCH2Z7TQKMYGE3P", "Status": "Success", "Name": "iPhone cover",
+                   "Price": None, "Stock": "Unavailable", "RatingCount": "695", "ReviewCount": "60"}
+        with patch("webapp.cloud.fetch_flipkart_html", AsyncMock(return_value=product)), \
+                patch("webapp.cloud.launch_browser", AsyncMock()) as launch:
+            response = await self.client.post("/api/cloud/scrape", json={"kind": "flipkart_pid", "value": product["PID"]})
+        self.assertEqual(response.json()["rows"], [product])
+        launch.assert_not_awaited()
+
     async def test_crashed_browser_is_closed_and_replaced(self):
         browsers = [AsyncMock(), AsyncMock()]
         product = {"ASIN": "B0GL2ZGQLX", "Status": "Success", "Title": "Recovered", "Price": "₹499"}
