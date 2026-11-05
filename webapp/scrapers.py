@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 
 from .browser import CLOUD, launch_browser
 
@@ -41,8 +41,11 @@ COLUMNS_BY_KIND = {
 }
 
 PRICE_SELECTORS = [
+    "#corePriceDisplay_desktop_feature_div .a-price .a-offscreen",
+    "#corePrice_feature_div .a-price .a-offscreen",
+    "#apex_desktop .a-price .a-offscreen",
+    "#buybox .a-price .a-offscreen",
     ".priceToPay .a-offscreen",
-    ".a-price .a-offscreen",
     "#priceblock_ourprice",
     "#priceblock_dealprice",
 ]
@@ -97,54 +100,61 @@ def blank_row(asin, status):
     }
 
 
+def parse_amazon_html(asin, html):
+    """Read product fields only; carousel/navigation text is never a rating."""
+    soup = BeautifulSoup(html, "html.parser")
+    title = soup.select_one("#productTitle")
+    if not title or not title.get_text(strip=True):
+        if soup.select_one('#captchacharacters, form[action*="validateCaptcha"]') or any(
+                marker in soup.get_text(" ", strip=True).lower()
+                for marker in ("enter the characters you see below", "sorry, we just need to make sure",
+                               "automated access to amazon")):
+            return blank_row(asin, "Blocked by Amazon")
+        return blank_row(asin, "Blocked/Not Found")
+
+    product_id = soup.select_one('input#ASIN[value]')
+    if product_id and product_id.get("value", "").upper() != asin:
+        return blank_row(asin, "Error: Amazon returned a different product")
+
+    price = None
+    for selector in PRICE_SELECTORS:
+        tag = soup.select_one(selector)
+        if tag and tag.get_text(strip=True):
+            price = tag.get_text(strip=True)
+            break
+
+    rating = None
+    for tag in soup.select('#acrPopover .a-icon-alt, #acrPopover[title], '
+                           '#averageCustomerReviews [data-hook="rating-out-of-text"], '
+                           '#averageCustomerReviews .a-icon-alt'):
+        text = tag.get("title") or tag.get_text(" ", strip=True)
+        match = re.search(r"\b([0-5](?:[.,]\d+)?)\s*(?:out of|/)\s*5\b", text, re.I)
+        if match and float(match.group(1).replace(",", ".")) <= 5:
+            rating = f'{match.group(1).replace(",", ".")} out of 5 stars'
+            break
+    review_tag = soup.select_one("#acrCustomerReviewText")
+    review_count = review_tag.get_text(strip=True) if review_tag else None
+    if review_count and not re.search(r"\d", review_count):
+        review_count = None
+    bullets = [text for li in soup.select("#feature-bullets li")
+               if (text := li.get_text(" ", strip=True))]
+    return {"ASIN": asin, "Status": "Success", "Title": title.get_text(strip=True),
+            "Price": price, "Rating": rating, "ReviewCount": review_count,
+            "Bullets": "; ".join(bullets), "URL": f"https://www.amazon.in/dp/{asin}"}
+
+
 async def scrape_amazon_product(page, asin):
-    url = f"https://www.amazon.in/dp/{asin}"
-
     try:
-        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        await asyncio.sleep(random.uniform(2, 4))
-
-        soup = BeautifulSoup(await page.content(), "html.parser")
-        title = soup.select_one("#productTitle")
-
-        if not title:
-            return blank_row(asin, "Blocked/Not Found")
-
-        # An .a-offscreen node can be present but empty, so keep looking
-        # until a selector actually yields text.
-        price = None
-        for selector in PRICE_SELECTORS:
-            tag = soup.select_one(selector)
-            if tag and tag.get_text(strip=True):
-                price = tag.get_text(strip=True)
-                break
-
-        rating_tag = (
-            soup.select_one("#acrPopover .a-icon-alt")
-            or soup.select_one("span.a-icon-alt")
-        )
-        review_tag = (
-            soup.select_one("#acrCustomerReviewText")
-            or soup.select_one("#acrCustomerReviewLink")
-        )
-
-        bullets = [
-            text
-            for li in soup.select("#feature-bullets li")
-            if (text := li.get_text(" ", strip=True))
-        ]
-
-        return {
-            "ASIN": asin,
-            "Status": "Success",
-            "Title": title.get_text(strip=True),
-            "Price": price,
-            "Rating": rating_tag.get_text(strip=True) if rating_tag else None,
-            "ReviewCount": review_tag.get_text(strip=True) if review_tag else None,
-            "Bullets": "; ".join(bullets),
-            "URL": url,
-        }
-
+        await page.goto(f"https://www.amazon.in/dp/{asin}", wait_until="domcontentloaded",
+                        timeout=45000 if CLOUD else 60000)
+        if CLOUD:
+            try:
+                await page.wait_for_selector("#productTitle", state="attached", timeout=8000)
+            except PlaywrightTimeoutError:
+                pass
+        else:
+            await asyncio.sleep(random.uniform(2, 4))
+        return parse_amazon_html(asin, await page.content())
     except Exception as exc:
         return blank_row(asin, f"Error: {exc}")
 

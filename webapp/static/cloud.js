@@ -90,10 +90,17 @@ async function startCloud(form, stopSel) {
     for (const [index, value] of prepared.values.entries()) {
       if (cloudStop) break;
       log(`[${index + 1}/${prepared.values.length}] ${value}`);
-      const data = await cloudJson(await fetch('/api/cloud/scrape', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, value }),
-      }));
+      let data;
+      try {
+        data = await requestCloudProduct(kind, value);
+      } catch (error) {
+        if (kind === 'flipkart') throw error;
+        log(`Could not fetch ${value}: ${error.message}. Continuing with the next product.`);
+        data = { rows: [{ [kind === 'amazon' ? 'ASIN' : 'PID']: value,
+          Status: 'Error: Request failed after retries; retry this product.',
+          URL: kind === 'amazon' ? `https://www.amazon.in/dp/${value}`
+            : `https://www.flipkart.com/product/p/itme?pid=${value}` }], logs: [] };
+      }
       data.logs.forEach(log);
       for (const row of data.rows) {
         cloudRun.rows.push(row);
@@ -130,6 +137,24 @@ async function startCloud(form, stopSel) {
     }
     if (stop) stop.disabled = true;
     buttons.forEach(button => { button.disabled = false; });
+  }
+}
+
+async function requestCloudProduct(kind, value) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch('/api/cloud/scrape', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, value }),
+      });
+      if (attempt === 0 && [429, 502, 503, 504].includes(response.status)) {
+        log(`Temporary server error for ${value}; retrying the request.`);
+      } else return await cloudJson(response);
+    } catch (error) {
+      if (attempt || !(error instanceof TypeError)) throw error;
+      log(`Connection interrupted for ${value}; retrying the request.`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 2500));
   }
 }
 

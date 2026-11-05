@@ -33,8 +33,10 @@ class CloudApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_product_request_waits_for_scrape_and_closes_browser(self):
         browser = AsyncMock()
-        product = {"ASIN": "B0CHX1W1XY", "Status": "Success", "Title": "Example"}
+        product = {"ASIN": "B0CHX1W1XY", "Status": "Success", "Title": "Example", "Price": "₹499"}
         with patch("webapp.cloud.launch_browser", AsyncMock(return_value=browser)), \
+                patch("webapp.cloud.fetch_amazon_html", AsyncMock(return_value={"Status": "Blocked by Amazon"})), \
+                patch("webapp.cloud.asyncio.sleep", AsyncMock()), \
                 patch("webapp.cloud.scrapers.scrape_amazon_product", AsyncMock(return_value=product)):
             response = await self.client.post("/api/cloud/scrape", json={
                 "kind": "amazon", "value": "B0CHX1W1XY",
@@ -58,6 +60,38 @@ class CloudApiTests(unittest.IsolatedAsyncioTestCase):
             })
         self.assertEqual(response.status_code, 422)
         self.assertIn("Compatible Mobiles", response.json()["error"])
+
+    async def test_html_product_does_not_launch_chromium(self):
+        product = {"ASIN": "B0GL2ZGQLX", "Status": "Success", "Title": "Example", "Price": "₹499"}
+        with patch("webapp.cloud.fetch_amazon_html", AsyncMock(return_value=product)), \
+                patch("webapp.cloud.launch_browser", AsyncMock()) as launch:
+            response = await self.client.post("/api/cloud/scrape", json={"kind": "amazon", "value": "B0GL2ZGQLX"})
+        self.assertEqual(response.json()["rows"], [product])
+        launch.assert_not_awaited()
+
+    async def test_crashed_browser_is_closed_and_replaced(self):
+        browsers = [AsyncMock(), AsyncMock()]
+        product = {"ASIN": "B0GL2ZGQLX", "Status": "Success", "Title": "Recovered", "Price": "₹499"}
+        with patch("webapp.cloud.fetch_amazon_html", AsyncMock(return_value={"Status": "Blocked by Amazon"})), \
+                patch("webapp.cloud.asyncio.sleep", AsyncMock()), \
+                patch("webapp.cloud.launch_browser", AsyncMock(side_effect=browsers)) as launch, \
+                patch("webapp.cloud.scrapers.scrape_amazon_product", AsyncMock(side_effect=[
+                    {"Status": "Error: Page.goto: Target page, context or browser has been closed"}, product])):
+            response = await self.client.post("/api/cloud/scrape", json={"kind": "amazon", "value": "B0GL2ZGQLX"})
+        self.assertEqual(response.json()["rows"], [product])
+        self.assertEqual(launch.await_count, 2)
+        for browser in browsers:
+            browser.close.assert_awaited_once()
+        self.assertTrue(response.json()["logs"])
+
+    async def test_browser_failure_preserves_product_html(self):
+        product = {"ASIN": "B0GL2ZGQLX", "Status": "Success", "Title": "Product without a listed price", "Price": None}
+        with patch("webapp.cloud.fetch_amazon_html", AsyncMock(return_value=product)), \
+                patch("webapp.cloud.asyncio.sleep", AsyncMock()), \
+                patch("webapp.cloud.launch_browser", AsyncMock(side_effect=RuntimeError("Browser crashed"))):
+            response = await self.client.post("/api/cloud/scrape", json={"kind": "amazon", "value": "B0GL2ZGQLX"})
+        self.assertEqual(response.json()["rows"], [product])
+        self.assertIn("did not return a product price", response.json()["logs"][-1])
 
     async def test_exports_work_without_server_job_history(self):
         row = {"ASIN": "B0CHX1W1XY", "Status": "Success", "Title": "Example ₹"}

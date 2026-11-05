@@ -47,6 +47,12 @@ downloadable until you restart the server.
 Deploy the repository root with `npx vercel --prod`. The root `app.py` exports
 the FastAPI application. `build_vercel.py` bundles pinned serverless Chromium;
 the browser runs headless in Vercel Functions.
+Functions run in Mumbai (`bom1`) so Indian retailers receive requests from India.
+
+Amazon reads the product HTML first and falls back to a lightweight browser with
+images, media, and fonts disabled. Temporary failures are retried with a fresh
+browser; failed requests produce an error row and do not stop the rest of a batch.
+Missing product ratings stay blank rather than picking up carousel text.
 
 Hosted batches await one product request at a time, with the configured delay
 between products. Keep the tab open while a batch runs. Stop finishes the current
@@ -63,6 +69,8 @@ Hosted endpoints are `POST /api/cloud/prepare`, `POST /api/cloud/scrape`, and
 
 Deployment smoke tests: install `httpx`, then run
 `python -m unittest discover -s tests`.
+Use `python -m tests.ui_smoke --local`, or
+`python tests/ui_smoke.py` against production, to verify batch recovery and downloads.
 
 ## Project files
 
