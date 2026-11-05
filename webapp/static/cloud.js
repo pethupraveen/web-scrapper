@@ -22,7 +22,6 @@ function setupCloudUI() {
   });
   const amazonNote = $('#panel-amazon .note');
   amazonNote.textContent = 'Runs in the cloud using headless Chromium. Keep this tab open during a batch. Retailers may block cloud traffic; blocked pages are reported in the results.';
-  $('#panel-flipkart .note').textContent = 'The cloud browser opens the Compatible Mobiles filter automatically. Keep this tab open until collection finishes.';
   $('footer p').textContent = 'Runs in the cloud. Results and the last 20 runs are saved in this browser. Keep the tab open while scraping and download results before clearing browser data.';
   ['csv', 'xlsx'].forEach(format => {
     $(`#dl-${format}`).addEventListener('click', event => {
@@ -60,8 +59,8 @@ async function startCloud(form, stopSel) {
   try {
     const prepared = await cloudJson(await fetch('/api/cloud/prepare', { method: 'POST', body }));
     cloudRun = {
-      id: crypto.randomUUID(), kind, label: kind === 'flipkart' ? prepared.values[0]
-        : `${prepared.values.length} ${kind === 'amazon' ? 'ASINs' : 'PIDs'}`,
+      id: crypto.randomUUID(), kind,
+      label: `${prepared.values.length} ${kind === 'amazon' ? 'ASINs' : 'PIDs'}`,
       status: 'running', total: prepared.values.length, done: 0, succeeded: 0,
       rows: [], error: null, started_at: new Date().toISOString(),
     };
@@ -94,7 +93,6 @@ async function startCloud(form, stopSel) {
       try {
         data = await requestCloudProduct(kind, value);
       } catch (error) {
-        if (kind === 'flipkart') throw error;
         log(`Could not fetch ${value}: ${error.message}. Continuing with the next product.`);
         data = { rows: [{ [kind === 'amazon' ? 'ASIN' : 'PID']: value,
           Status: 'Error: Request failed after retries; retry this product.',
@@ -107,9 +105,7 @@ async function startCloud(form, stopSel) {
         addRow(columns, row);
       }
       cloudRun.done = cloudRun.rows.length;
-      if (kind === 'flipkart') cloudRun.total = cloudRun.done;
-      cloudRun.succeeded = kind === 'flipkart' ? cloudRun.done
-        : cloudRun.rows.filter(row => row.Status === 'Success').length;
+      cloudRun.succeeded = cloudRun.rows.filter(row => row.Status === 'Success').length;
       setStatus(cloudRun);
       $('#bar').style.width = `${Math.round((index + 1) / prepared.values.length * 100)}%`;
       saveCloudRun();
@@ -119,9 +115,6 @@ async function startCloud(form, stopSel) {
       }
     }
     cloudRun.status = cloudStop ? 'stopped' : 'done';
-    if (kind === 'flipkart' && !cloudRun.done && !cloudStop) {
-      log('No models found. The page may be blocked or the Compatible Mobiles filter may be absent.');
-    }
   } catch (error) {
     if (cloudRun?.status === 'running') {
       cloudRun.status = 'error';
@@ -175,7 +168,7 @@ async function downloadCloud(job, format) {
 }
 
 function loadCloudHistory() {
-  const history = readCloudHistory().filter(job => job.id !== activeJob);
+  const history = readCloudHistory().filter(job => KIND_LABELS[job.kind] && job.id !== activeJob);
   $('#history-panel').classList.toggle('hidden', history.length === 0);
   $('#history').replaceChildren();
   history.forEach(job => {

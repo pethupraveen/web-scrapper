@@ -1,4 +1,4 @@
-"""Web tool wrapping the Amazon ASIN scraper and the Flipkart model harvester.
+"""Web tool for Amazon ASIN and Flipkart PID product scraping.
 
 Run it with:  python -m webapp        (or: uvicorn webapp.app:app --reload)
 """
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from . import scrapers
 from .browser import CLOUD
-from .cloud import router as cloud_router, listing_url
+from .cloud import router as cloud_router
 from .jobs import JOBS, Job, register, run_job
 
 STATIC_DIR = Path(__file__).with_name("static")
@@ -131,10 +131,8 @@ async def collect_ids(pasted, file, kind, parse_text):
 @app.post("/api/cloud/prepare")
 async def prepare_cloud(
     kind: str = Form(...), asins: str = Form(""), pids: str = Form(""),
-    url: str = Form(""), file: UploadFile | None = None, limit: int = Form(0, ge=0),
+    file: UploadFile | None = None, limit: int = Form(0, ge=0),
 ):
-    if kind == "flipkart":
-        return {"values": [listing_url(url.strip())]}
     if kind not in ID_KINDS:
         raise HTTPException(400, "Unknown scraper type.")
     pasted, parser = ((asins, scrapers.parse_asin_text) if kind == "amazon"
@@ -215,19 +213,6 @@ async def start_flipkart_pids(
             max_delay=max_delay,
         )
     )
-
-    return job.summary()
-
-
-@app.post("/api/jobs/flipkart")
-async def start_flipkart(url: str = Form(...), headless: bool = Form(False)):
-    url = url.strip()
-
-    if not url.startswith("http") or "flipkart." not in url:
-        raise HTTPException(400, "Give a full Flipkart listing URL (https://www.flipkart.com/…).")
-
-    job = register(Job("flipkart", 0, url))
-    job.task = asyncio.create_task(run_job(job, url=url, headless=headless))
 
     return job.summary()
 

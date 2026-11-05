@@ -8,7 +8,6 @@ import httpx
 import pandas as pd
 
 from webapp.app import app
-from webapp.scrapers import ListingFilterError
 
 
 class CloudApiTests(unittest.IsolatedAsyncioTestCase):
@@ -25,11 +24,11 @@ class CloudApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["values"], ["B0CHX1W1XY", "B09G9BL5CD"])
 
-    async def test_rejects_untrusted_listing_urls(self):
-        for url in ("https://evil.test/?flipkart.com", "https://flipkart.com.evil.test/",
-                    "http://www.flipkart.com/", "https://www.flipkart.com:bad/"):
-            response = await self.client.post("/api/cloud/scrape", json={"kind": "flipkart", "value": url})
-            self.assertEqual(response.status_code, 400, url)
+    async def test_removed_models_finder_is_not_available(self):
+        response = await self.client.post("/api/cloud/prepare", data={"kind": "flipkart", "url": "https://www.flipkart.com/search?q=cover"})
+        self.assertEqual(response.status_code, 400)
+        response = await self.client.post("/api/cloud/scrape", json={"kind": "flipkart", "value": "https://www.flipkart.com/search?q=cover"})
+        self.assertEqual(response.status_code, 422)
 
     async def test_product_request_waits_for_scrape_and_closes_browser(self):
         browser = AsyncMock()
@@ -51,15 +50,6 @@ class CloudApiTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("true", response.text)
             response = await self.client.post("/api/jobs/amazon", data={"asins": "B0CHX1W1XY"})
             self.assertEqual(response.status_code, 409)
-
-    async def test_listing_without_filter_has_actionable_error(self):
-        with patch("webapp.cloud.scrapers.run_flipkart", AsyncMock(
-                side_effect=ListingFilterError("This listing has no Compatible Mobiles filter."))):
-            response = await self.client.post("/api/cloud/scrape", json={
-                "kind": "flipkart", "value": "https://www.flipkart.com/search?q=mobile+cover",
-            })
-        self.assertEqual(response.status_code, 422)
-        self.assertIn("Compatible Mobiles", response.json()["error"])
 
     async def test_html_product_does_not_launch_chromium(self):
         product = {"ASIN": "B0GL2ZGQLX", "Status": "Success", "Title": "Example", "Price": "₹499"}

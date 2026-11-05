@@ -18,9 +18,6 @@ from playwright.async_api import async_playwright, TimeoutError as PlaywrightTim
 from .browser import CLOUD, launch_browser
 
 
-class ListingFilterError(Exception):
-    """The listing does not expose the filter needed for model collection."""
-
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -30,7 +27,6 @@ USER_AGENT = (
 AMAZON_COLUMNS = [
     "ASIN", "Status", "Title", "Price", "Rating", "ReviewCount", "Bullets", "URL",
 ]
-FLIPKART_COLUMNS = ["model"]
 FLIPKART_PID_COLUMNS = [
     "PID", "Status", "Name", "Rating", "RatingCount", "ReviewCount",
     "Price", "MRP", "Stock", "URL",
@@ -38,7 +34,6 @@ FLIPKART_PID_COLUMNS = [
 
 COLUMNS_BY_KIND = {
     "amazon": AMAZON_COLUMNS,
-    "flipkart": FLIPKART_COLUMNS,
     "flipkart_pid": FLIPKART_PID_COLUMNS,
 }
 
@@ -194,80 +189,9 @@ async def run_amazon(asins, on_progress, headless=False, min_delay=2.0, max_dela
     return results
 
 
-# The DevTools snippet, reused verbatim as an in-page evaluate. Returns the
-# model names instead of downloading a CSV.
-FLIPKART_COLLECT_JS = Path(__file__).with_name("flipkart_collect.js").read_text(
-    encoding="utf-8"
-)
-
 FLIPKART_PRICE_JS = Path(__file__).with_name("flipkart_price.js").read_text(
     encoding="utf-8"
 )
-
-
-async def run_flipkart(url, on_progress, headless=False, should_stop=None):
-    """Open a Flipkart listing, expand the Compatible Mobiles filter, harvest it."""
-    async with async_playwright() as p:
-        browser = await launch_browser(p, headless=headless)
-        context = await browser.new_context(locale="en-IN", user_agent=USER_AGENT)
-        page = await context.new_page()
-
-        try:
-            await on_progress("log", {"message": f"Opening {url}"})
-            await page.goto(url, wait_until="domcontentloaded", timeout=90000)
-            await asyncio.sleep(3)
-
-            await on_progress("log", {"message": "Looking for the Compatible Mobiles filter…"})
-
-            opened = await page.evaluate(
-                """() => {
-                  const hit = [...document.querySelectorAll('div,span,section')].find(el =>
-                    el.children.length === 0 &&
-                    /compatible mobile/i.test(el.textContent || ''));
-                  if (hit) { hit.click(); return true; }
-                  return false;
-                }"""
-            )
-
-            if opened:
-                await on_progress("log", {"message": "Filter opened, waiting for the overlay."})
-                await asyncio.sleep(3)
-            else:
-                if CLOUD:
-                    raise ListingFilterError(
-                        "This listing did not expose the Compatible Mobiles filter. "
-                        "Try a category listing with that filter; Flipkart may also have blocked the page.")
-                await on_progress("log", {
-                    "message": "Could not click the filter automatically — "
-                               "open it in the browser window, then wait.",
-                })
-                await asyncio.sleep(12)
-
-            if should_stop and should_stop():
-                return []
-
-            await on_progress("log", {"message": "Scrolling the model list…"})
-            try:
-                models = await page.evaluate(FLIPKART_COLLECT_JS)
-            except Exception as exc:
-                if CLOUD and ('Search Compatible Mobile' in str(exc) or 'not the list container' in str(exc)):
-                    raise ListingFilterError(
-                        "The Compatible Mobiles filter could not be read. "
-                        "Try a category listing with that filter, or retry the page.") from exc
-                raise
-
-            await on_progress("log", {"message": f"Collected {len(models)} models."})
-
-            rows = [{"model": m} for m in models]
-
-            for row in rows:
-                await on_progress("row", {"row": row, "done": len(rows), "total": len(rows)})
-
-            return rows
-
-        finally:
-            await context.close()
-            await browser.close()
 
 
 # ── Flipkart product pages, by PID / FSN ────────────────────────────────

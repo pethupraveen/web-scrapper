@@ -26,6 +26,10 @@ async def main(base="https://web-scrapper-umber.vercel.app"):
 
         await page.route("**/api/cloud/scrape", product)
         await page.goto(base, wait_until="networkidle")
+        assert await page.locator('.tab').count() == 2
+        await page.locator('[data-tab="flipkart_pid"]').click()
+        assert await page.locator('#form-flipkart_pid').is_visible()
+        await page.locator('[data-tab="amazon"]').click()
         assert await page.locator("#form-amazon input[name=headless]").is_disabled()
         await page.locator("textarea[name=asins]").fill("B0CHX1W1XY B09G9BL5CD B0BDHWDR12")
         await page.locator("#form-amazon input[name=min_delay]").fill("0")

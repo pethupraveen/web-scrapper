@@ -16,7 +16,7 @@ MAX_JOBS = 50
 class Job:
     def __init__(self, kind, total, label):
         self.id = uuid.uuid4().hex[:12]
-        self.kind = kind                      # "amazon" | "flipkart"
+        self.kind = kind                      # "amazon" | "flipkart_pid"
         self.label = label
         self.total = total
         self.status = "queued"                # queued | running | done | error | stopped
@@ -59,11 +59,6 @@ class Job:
     def columns(self):
         return scrapers.COLUMNS_BY_KIND[self.kind]
 
-    @property
-    def has_status(self):
-        """Flipkart model runs return bare names; the others carry a Status."""
-        return self.kind in {"amazon", "flipkart_pid"}
-
     def dataframe(self):
         if not self.rows:
             return pd.DataFrame(columns=self.columns)
@@ -88,7 +83,7 @@ class Job:
             "status": self.status,
             "total": self.total,
             "done": len(self.rows),
-            "succeeded": succeeded if self.has_status else len(self.rows),
+            "succeeded": succeeded,
             "error": self.error,
             "started_at": self.started_at.isoformat(),
             "finished_at": self.finished_at.isoformat() if self.finished_at else None,
@@ -131,14 +126,6 @@ async def run_job(job, **options):
                 max_delay=options.get("max_delay", 5.0),
                 should_stop=job.should_stop,
             )
-        else:
-            await scrapers.run_flipkart(
-                options["url"],
-                job.emit,
-                headless=options.get("headless", False),
-                should_stop=job.should_stop,
-            )
-
         job.status = "stopped" if job.should_stop() else "done"
 
     except asyncio.CancelledError:

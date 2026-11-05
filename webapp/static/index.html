@@ -12,7 +12,7 @@
   <div class="wrap headrow">
     <div>
       <h1>Web Scrapper</h1>
-      <p class="tag">Amazon ASINs, Flipkart PIDs and Flipkart compatible-model lists, in the browser.</p>
+      <p class="tag">Amazon ASINs and Flipkart PIDs, in the browser.</p>
     </div>
     <span id="conn" class="pill idle">idle</span>
   </div>
@@ -23,7 +23,6 @@
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="amazon" role="tab">Amazon ASINs</button>
     <button class="tab" data-tab="flipkart_pid" role="tab">Flipkart PIDs</button>
-    <button class="tab" data-tab="flipkart" role="tab">Flipkart models</button>
   </nav>
 
   <!-- ── Amazon ─────────────────────────────────────────────────────── -->
@@ -116,29 +115,6 @@
   </section>
 
   <!-- ── Flipkart ───────────────────────────────────────────────────── -->
-  <section class="panel hidden" id="panel-flipkart">
-    <form id="form-flipkart">
-      <label class="field">
-        <span class="label">Flipkart listing URL</span>
-        <input type="url" name="url" placeholder="https://www.flipkart.com/search?q=mobile+cover" required>
-        <span class="hint">A listing page that has the <strong>Compatible Mobiles</strong> filter.</span>
-      </label>
-
-      <label class="check">
-        <input type="checkbox" name="headless">
-        <span>Headless browser</span>
-      </label>
-
-      <p class="note">The tool tries to open the filter overlay itself. If it can't, it says so and
-        waits ~12s — open the overlay in the Chromium window it launched and it will carry on.</p>
-
-      <div class="actions">
-        <button class="btn primary" type="submit">Collect models</button>
-        <button class="btn" type="button" id="stop-flipkart" disabled>Stop</button>
-      </div>
-    </form>
-  </section>
-
   <!-- ── Run output ─────────────────────────────────────────────────── -->
   <section class="panel run hidden" id="run">
     <div class="run-head">

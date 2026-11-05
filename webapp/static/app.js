@@ -7,17 +7,15 @@ const COLUMNS = {
   amazon: ['ASIN', 'Status', 'Title', 'Price', 'Rating', 'ReviewCount', 'Bullets'],
   flipkart_pid: ['PID', 'Status', 'Name', 'Rating', 'RatingCount', 'ReviewCount',
                  'Price', 'MRP', 'Stock'],
-  flipkart: ['model'],
 };
 
 const KIND_LABELS = {
   amazon: 'Amazon',
   flipkart_pid: 'Flipkart PIDs',
-  flipkart: 'Flipkart models',
 };
 
 // ── tabs ────────────────────────────────────────────────────────────────
-const TABS = ['amazon', 'flipkart_pid', 'flipkart'];
+const TABS = ['amazon', 'flipkart_pid'];
 
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
@@ -62,7 +60,6 @@ function wirePreview(formSel, hintSel, kind, noun, idleText) {
 $('#form-amazon').addEventListener('submit', e => start(e, '/api/jobs/amazon', '#stop-amazon'));
 $('#form-flipkart_pid').addEventListener('submit',
   e => start(e, '/api/jobs/flipkart-pids', '#stop-flipkart_pid'));
-$('#form-flipkart').addEventListener('submit', e => start(e, '/api/jobs/flipkart', '#stop-flipkart'));
 
 async function start(event, endpoint, stopSel) {
   event.preventDefault();
@@ -99,9 +96,7 @@ function attach(summary, stopSel) {
   if (source) source.close();
 
   $('#run').classList.remove('hidden');
-  $('#run-title').textContent = summary.kind === 'flipkart'
-    ? 'Flipkart — compatible models'
-    : `${KIND_LABELS[summary.kind]} — ${summary.label}`;
+  $('#run-title').textContent = `${KIND_LABELS[summary.kind]} — ${summary.label}`;
   $('#log').textContent = '';
   $('#body').innerHTML = '';
   $('#bar').style.width = '0%';
@@ -166,7 +161,7 @@ function setStatus(summary) {
 
   const parts = [`${summary.done}${summary.total ? ` / ${summary.total}` : ''} rows`];
 
-  if (summary.kind !== 'flipkart') parts.push(`${summary.succeeded} succeeded`);
+  parts.push(`${summary.succeeded} succeeded`);
   if (summary.error) parts.push(summary.error);
 
   $('#run-sub').textContent = parts.join(' · ');

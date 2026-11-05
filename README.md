@@ -27,8 +27,6 @@ Two tabs:
   and everything scraped so far is still downloadable.
 - **Flipkart PIDs** — paste PIDs / FSN IDs (or product URLs), or upload a sheet with an
   `FSN_ID` column, and get name, rating, rating count, price, MRP and stock per product.
-- **Flipkart models** — give a listing URL; the tool opens the *Compatible Mobiles*
-  filter, scrolls the whole list, and returns every model name.
 
 Results download as `.xlsx` or `.csv`. Past runs stay in **Earlier runs** and remain
 downloadable until you restart the server.
@@ -85,10 +83,10 @@ Use `python -m tests.ui_smoke --local`, or
 | `webapp/` | The web tool: FastAPI backend (`app.py`), job registry with SSE streaming (`jobs.py`), async scraping cores (`scrapers.py`), and the UI in `static/`. |
 | `Amazon_Updated_Script.py` | CLI version: reads ASINs from `input_asins.xlsx`, visits `amazon.in/dp/<ASIN>` with Playwright, writes results to `scraped_amazon_results.xlsx`. |
 | `scraper_New.py`, `scraper_updated.py` | The original `requests`-based Flipkart PID scrapers. Superseded by the **Flipkart PIDs** tab — see the note below before trusting their output. |
-| `console_snippet.js` | The original paste-into-DevTools Flipkart script, kept for when you'd rather not run the server. `webapp/flipkart_collect.js` is the same logic, driven by Playwright. |
+| `console_snippet.js` | The original paste-into-DevTools Flipkart script, kept for when you'd rather not run the server. |
 
-Both Flipkart scripts use **no Flipkart class names**, so they survive their CSS-hash
-rotation — they find the list by locating the search input and walking up to the
+The standalone Flipkart console snippet uses **no Flipkart class names**, so it survives CSS-hash
+rotation — it finds the list by locating the search input and walking up to the
 ancestor that holds the checkboxes.
 
 ## Fields collected
@@ -97,7 +95,6 @@ ancestor that holds the checkboxes.
 | --- | --- |
 | Amazon ASINs | `ASIN`, `Status`, `Title`, `Price`, `Rating`, `ReviewCount`, `Bullets`, `URL` |
 | Flipkart PIDs | `PID`, `Status`, `Name`, `Rating`, `RatingCount`, `ReviewCount`, `Price`, `MRP`, `Stock`, `URL` |
-| Flipkart models | `model` |
 
 `Status` is `Success`, `Blocked/Not Found` when the page came back without a product
 title, or `Error: …`. A blocked row never crashes the run.
@@ -111,7 +108,6 @@ The UI is a thin client over a JSON API (interactive docs at `/api/docs`):
 | `POST /api/preview` | Count ASINs in an uploaded sheet |
 | `POST /api/jobs/amazon` | Start an ASIN run (`asins`, `file`, `headless`, `min_delay`, `max_delay`, `limit`) |
 | `POST /api/jobs/flipkart-pids` | Start a PID run (`pids`, `file`, `headless`, `min_delay`, `max_delay`, `limit`) |
-| `POST /api/jobs/flipkart` | Start a model run (`url`, `headless`) |
 | `GET /api/jobs/{id}/events` | Server-sent events: `log`, `row`, `status`, `end` |
 | `POST /api/jobs/{id}/stop` | Ask a run to stop |
 | `GET /api/jobs/{id}/download.xlsx` / `.csv` | Export results |

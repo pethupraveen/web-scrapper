@@ -3,7 +3,6 @@
 import asyncio
 from contextlib import suppress
 from typing import Literal
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
@@ -16,7 +15,7 @@ from .browser import launch_browser
 from .jobs import Job
 
 router = APIRouter(prefix="/api/cloud")
-Kind = Literal["amazon", "flipkart_pid", "flipkart"]
+Kind = Literal["amazon", "flipkart_pid"]
 _browser_slot = asyncio.Semaphore(1)
 CLOUD_USER_AGENT = scrapers.USER_AGENT.replace("Chrome/125.0", "Chrome/153.0")
 
@@ -144,18 +143,6 @@ async def scrape_cloud_product(kind, value, logs):
     return blank(value, "Error: Cloud page failed after retries; retry this product.")
 
 
-def listing_url(value):
-    try:
-        parsed = urlsplit(value)
-        valid = (parsed.scheme == "https" and parsed.hostname in {"flipkart.com", "www.flipkart.com"}
-                 and not parsed.username and not parsed.password and parsed.port in (None, 443))
-    except ValueError:
-        valid = False
-    if not valid:
-        raise HTTPException(400, "Enter an https://www.flipkart.com/ listing URL.")
-    return value
-
-
 class ScrapeRequest(BaseModel):
     kind: Kind
     value: str = Field(min_length=1, max_length=4096)
@@ -171,29 +158,15 @@ async def scrape(body: ScrapeRequest):
     logs = []
     rows = []
 
-    async def progress(event, data):
-        if event == "log":
-            logs.append(data["message"])
-        elif event == "row":
-            rows.append(data["row"])
-
-    if body.kind == "flipkart":
-        listing_url(body.value)
-    else:
-        cleaner = scrapers.clean_asin if body.kind == "amazon" else scrapers.clean_pid
-        if cleaner(body.value) != body.value:
-            raise HTTPException(400, "Invalid product ID.")
+    cleaner = scrapers.clean_asin if body.kind == "amazon" else scrapers.clean_pid
+    if cleaner(body.value) != body.value:
+        raise HTTPException(400, "Invalid product ID.")
 
     async def run():
-        if body.kind == "flipkart":
-            await scrapers.run_flipkart(body.value, progress, headless=True)
-        else:
-            rows.append(await scrape_cloud_product(body.kind, body.value, logs))
+        rows.append(await scrape_cloud_product(body.kind, body.value, logs))
 
     try:
         await asyncio.wait_for(run(), timeout=240)
-    except scrapers.ListingFilterError as exc:
-        raise HTTPException(422, str(exc))
     except asyncio.TimeoutError:
         raise HTTPException(504, "This page took too long. Download completed rows and retry this item.")
     except Exception as exc:

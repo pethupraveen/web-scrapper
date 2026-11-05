@@ -61,7 +61,7 @@
   <h1>Web Scrapper</h1>
   <p class="tag">A small toolkit for pulling product data off Indian e-commerce sites —
      a Playwright scraper for Amazon ASINs, a console snippet for Flipkart's
-     compatible-models list, and a local web tool that drives both from your browser.</p>
+     compatible-models list, and a web tool for Amazon ASINs and Flipkart PIDs.</p>
   <a class="btn primary" href="https://github.com/pethupraveen/web-scrapper">View on GitHub</a>
   <a class="btn" href="#quickstart">Quick start</a>
 </header>
@@ -77,8 +77,7 @@
     </div>
     <div class="card">
       <h3>Web tool</h3>
-      <p>All three scrapers behind one local page — Amazon ASINs, Flipkart PIDs, and
-         Flipkart model lists. Paste ids or upload a sheet, watch rows land live, stop a
+      <p>Two product scrapers behind one page — Amazon ASINs and Flipkart PIDs. Paste ids or upload a sheet, watch rows land live, stop a
          run mid-flight, and download <code>.xlsx</code> or <code>.csv</code>.</p>
     </div>
     <div class="card">
@@ -104,7 +103,7 @@ playwright install chromium</code></pre>
   <h3>Run the web tool</h3>
 <pre><code>python -m webapp        # Windows: run_webtool.bat</code></pre>
   <p class="muted">Open <code>http://127.0.0.1:8000</code>. One tab for Amazon ASINs,
-     one for Flipkart PIDs, one for Flipkart model lists; results stream in as they're
+     one for Flipkart PIDs; results stream in as they're
      scraped and export to Excel or CSV. Start it without <code>--reload</code> — reload mode puts uvicorn on a
      selector event loop that can't launch Playwright's browser on Windows.</p>
 
